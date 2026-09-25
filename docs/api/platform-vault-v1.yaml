@@ -1,0 +1,2871 @@
+openapi: 3.0.3
+info:
+  title: Plataforma de Gobierno de Credenciales, Certificados y Secretos (PGCCS)
+  description: >
+    Contrato REST de la Fase 1 de la PGCCS. Deriva de
+    docs/specs/functional/02-user-stories.md (US-001 a US-062),
+    docs/specs/functional/03-domain-glossary.md (RN-001 a RN-124) y
+    docs/architecture/ (domain-model.md, c4-containers.md, ADR-001).
+
+    Convenciones:
+      * Todo endpoint que puede devolver un Sensitive Payload lo indica
+        explícitamente con `x-returns-sensitive-payload: true`; el resto
+        de endpoints JAMÁS incluye valores secretos (RN-085, RN-086).
+      * `x-phase` marca si un endpoint es F1 (activo en esta versión) o
+        F2 (documentado para diseño futuro, no se implementa aún — DEC-03,
+        DEC-08). El valor por defecto es F1 cuando el campo no aparece.
+      * `x-permission` indica el permiso de dominio evaluado por el
+        Authorization Service antes de ejecutar el caso de uso
+        (RN-010, RN-040 a RN-043; ver domain-model.md §11).
+      * Toda mutación exitosa genera un AuditEvent en la misma transacción
+        (RN-079, fail-closed); esto no se repite endpoint por endpoint.
+      * La custodia criptográfica es enteramente local (DEC-35): no hay
+        integración con Azure Key Vault ni con otros servicios de nube.
+      * Los ejemplos de esta especificación nunca contienen secretos,
+        contraseñas ni material de clave reales.
+  version: "1.0.0"
+  contact:
+    name: Equipo de Arquitectura PGCCS
+  license:
+    name: Uso interno — Institución financiera
+externalDocs:
+  description: Especificación funcional y arquitectura de referencia
+  url: ../specs/functional/01-vision-document.md
+
+servers:
+  - url: https://pgccs-api.banco.internal/api/v1
+    description: Producción (on-premise, DEC-02)
+  - url: https://pgccs-api-uat.banco.internal/api/v1
+    description: UAT
+  - url: https://pgccs-api-qa.banco.internal/api/v1
+    description: QA
+
+tags:
+  - name: ManagedObjects
+    description: Inventario de objetos administrados (US-001 a US-014, US-019, US-050, US-055)
+  - name: SensitivePayload
+    description: Cifrado local, revelado y descarga (US-015 a US-017). Sin servicios de nube (DEC-35)
+  - name: SplitKey
+    description: Llave dividida y custodios designados (US-056 a US-058)
+  - name: Groups
+    description: Grupos de acceso propios de la plataforma (US-027, US-028, US-053)
+  - name: Identity
+    description: Usuarios, roles, permisos efectivos y cuentas de emergencia (US-025, US-029, US-030, US-062)
+  - name: AccessGovernance
+    description: Políticas de acceso, solicitudes, aprobaciones y acceso temporal (US-031 a US-035)
+  - name: Expiration
+    description: Políticas de expiración, alertas y escalamiento (US-020 a US-024)
+  - name: Audit
+    description: Auditoría, trazabilidad de uso y revisión diaria (US-036 a US-040, US-059)
+  - name: Findings
+    description: Hallazgos sobre el inventario registrado (US-050)
+  - name: Compliance
+    description: Controles de cumplimiento y paquetes de evidencia (US-044, US-052)
+  - name: Dashboards
+    description: Indicadores operativos y ejecutivos (US-041, US-042)
+  - name: Reports
+    description: Reportes y exportaciones (US-043, US-045)
+  - name: Applications
+    description: Recuperación de secretos por aplicaciones — Fase 2 (US-046, DEC-03)
+
+security:
+  - entraIdAuth: []
+
+paths:
+
+  # ============================================================
+  # IDENTITY
+  # ============================================================
+  /me/effective-permissions:
+    get:
+      tags: [Identity]
+      operationId: getMyEffectivePermissions
+      summary: Consultar mis roles, grupos y permisos efectivos
+      description: RN-010, RN-036, RN-041. Denegación por defecto si no hay roles asignados.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Permisos efectivos del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectivePermissions"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users:
+    get:
+      tags: [Identity]
+      operationId: searchUsers
+      summary: Buscar usuarios provisionados en la plataforma
+      x-permission: Administrar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema: { $ref: "#/components/schemas/RoleName" }
+        - name: status
+          in: query
+          schema: { type: string, enum: [Active, Disabled] }
+      responses:
+        "200":
+          description: Página de usuarios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedUsers"
+
+  /users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/UserIdParam"
+    get:
+      tags: [Identity]
+      operationId: getUser
+      summary: Consultar un usuario
+      x-permission: Administrar
+      responses:
+        "200":
+          description: Usuario
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{userId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/UserIdParam"
+    post:
+      tags: [Identity]
+      operationId: assignRole
+      summary: Asignar un rol a un usuario
+      description: >
+        RN-036 (SoD, un usuario puede tener varios roles salvo Auditor/Seguridad,
+        que son exclusivos), RN-038 (cuatro ojos y sin autoasignación para
+        Administrador, Seguridad, Custodio y Auditor).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, scope]
+              properties:
+                role: { $ref: "#/components/schemas/RoleName" }
+                scope: { $ref: "#/components/schemas/Scope" }
+      responses:
+        "202":
+          description: >
+            Asignación creada; queda pendiente de aprobación de cuatro ojos
+            si el rol es privilegiado (RN-038)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleAssignment" }
+        "409":
+          description: Conflicto de segregación de funciones (RN-036)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /users/{userId}/roles/{role}:
+    parameters:
+      - $ref: "#/components/parameters/UserIdParam"
+      - name: role
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/RoleName" }
+    delete:
+      tags: [Identity]
+      operationId: revokeRole
+      summary: Revocar un rol de un usuario
+      x-permission: Administrar
+      responses:
+        "204": { description: Rol revocado }
+
+  /emergency-accounts:
+    get:
+      tags: [Identity]
+      operationId: listEmergencyAccounts
+      summary: Listar cuentas locales de emergencia
+      description: RN-030, RN-123, DEC-33. Máximo 6 por defecto.
+      x-permission: Administrar
+      responses:
+        "200":
+          description: Lista de cuentas de emergencia
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmergencyAccount" }
+    post:
+      tags: [Identity]
+      operationId: createEmergencyAccount
+      summary: Crear una cuenta local de emergencia
+      description: Requiere aprobación de Seguridad (RN-123).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEmergencyAccountRequest" }
+      responses:
+        "202":
+          description: Cuenta creada, pendiente de aprobación de Seguridad
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmergencyAccount" }
+
+  /emergency-accounts/activate:
+    post:
+      tags: [Identity]
+      operationId: activateEmergencyMode
+      summary: Activar el modo de emergencia (Entra ID no disponible)
+      description: >
+        RN-123. Requiere que se autentiquen, en llamadas separadas de esta
+        misma operación, la cuenta de un Administrador y la de un usuario
+        de Seguridad. Solo disponible cuando la plataforma detecta que
+        Entra ID no responde.
+      security: [] # autenticación local propia de la cuenta de emergencia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, password, mfaCode]
+              properties:
+                accountId: { type: string }
+                password: { type: string, format: password }
+                mfaCode: { type: string }
+      responses:
+        "202":
+          description: Componente de activación registrado; a la espera del segundo actor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmergencyActivationStatus" }
+        "200":
+          description: Modo de emergencia activado (segundo actor completó la activación conjunta)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmergencyActivationStatus" }
+
+  # ============================================================
+  # GROUPS
+  # ============================================================
+  /groups:
+    get:
+      tags: [Groups]
+      operationId: searchGroups
+      summary: Buscar grupos de acceso
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: isPersonal
+          in: query
+          schema: { type: boolean }
+        - name: status
+          in: query
+          schema: { type: string, enum: [Activo, Inactivo] }
+      responses:
+        "200":
+          description: Página de grupos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedSecurityGroups" }
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Crear un grupo de acceso
+      description: RN-033, RN-034, DEC-12, DEC-14. Solo el Administrador crea grupos.
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGroupRequest" }
+      responses:
+        "201":
+          description: Grupo creado
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityGroup" }
+
+  /groups/{groupId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupIdParam"
+    get:
+      tags: [Groups]
+      operationId: getGroup
+      summary: Consultar un grupo (miembros, responsables, objetos asignados)
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Grupo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityGroupDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Groups]
+      operationId: updateGroup
+      summary: Actualizar responsables, configuración de notificaciones o estado del grupo
+      description: RN-034, RN-035, RN-105.
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateGroupRequest" }
+      responses:
+        "200":
+          description: Grupo actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityGroup" }
+
+  /groups/{groupId}/members:
+    parameters:
+      - $ref: "#/components/parameters/GroupIdParam"
+    post:
+      tags: [Groups]
+      operationId: addGroupMember
+      summary: Agregar un miembro al grupo
+      description: >
+        RN-034 (solo Responsable o Administrador), RN-103 (Auditor/Seguridad
+        no pueden ser miembros; deshabilitados no se admiten).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Miembro agregado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GroupMember" }
+        "409":
+          description: Conflicto de segregación de funciones (RN-103)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /groups/{groupId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupIdParam"
+      - $ref: "#/components/parameters/UserIdParam"
+    delete:
+      tags: [Groups]
+      operationId: removeGroupMember
+      summary: Retirar un miembro del grupo
+      description: >
+        RN-035 — revoca visibilidad, cancela solicitudes pendientes y
+        Temporary Access derivados de esa pertenencia.
+      x-permission: Administrar
+      responses:
+        "204": { description: Miembro retirado }
+
+  # ============================================================
+  # MANAGED OBJECTS
+  # ============================================================
+  /objects:
+    get:
+      tags: [ManagedObjects]
+      operationId: searchManagedObjects
+      summary: Buscar objetos administrados por múltiples criterios
+      description: RF-INV-05, RF-INV-06, RN-010 (ámbito del usuario). US-010.
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/ObjectType" }
+        - name: subtype
+          in: query
+          schema: { type: string }
+        - name: criticality
+          in: query
+          schema: { $ref: "#/components/schemas/Criticality" }
+        - name: sensitivity
+          in: query
+          schema: { $ref: "#/components/schemas/Sensitivity" }
+        - name: environment
+          in: query
+          schema: { $ref: "#/components/schemas/Environment" }
+        - name: areaId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: applicationId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: groupId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: ownerId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: lifecycleState
+          in: query
+          schema: { $ref: "#/components/schemas/LifecycleState" }
+        - name: expirationStatus
+          in: query
+          schema: { $ref: "#/components/schemas/ExpirationStatus" }
+        - name: expiresFrom
+          in: query
+          schema: { type: string, format: date }
+        - name: expiresTo
+          in: query
+          schema: { type: string, format: date }
+        - name: insecureConfiguration
+          in: query
+          schema: { type: boolean }
+        - name: noUsage
+          in: query
+          schema: { type: boolean }
+        - name: orphanOwner
+          in: query
+          schema: { type: boolean }
+        - name: splitKey
+          in: query
+          schema: { type: boolean }
+        - name: includeDeleted
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Página de objetos (metadatos únicamente, nunca Sensitive Payload)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedManagedObjects" }
+    post:
+      tags: [ManagedObjects]
+      operationId: createManagedObject
+      summary: Registrar un objeto administrado (certificado, secreto, credencial, clave o cuenta de servicio)
+      description: >
+        US-001 a US-005. El cuerpo se discrimina por `type`. RN-124 valida
+        que no se registren datos de tarjeta en los metadatos.
+      x-permission: Crear
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateManagedObjectRequest" }
+      responses:
+        "201":
+          description: Objeto creado en estado Borrador
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+        "409":
+          description: Duplicado (huella SHA-256 ya registrada, RN-018) o dato de tarjeta detectado (RN-124)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /objects/bulk-import:
+    post:
+      tags: [ManagedObjects]
+      operationId: validateBulkImport
+      summary: Validar un archivo CSV de carga inicial (sin confirmar)
+      description: US-012, DEC-04. La plantilla no admite columnas de valores secretos (RN-085).
+      x-permission: Crear
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Reporte de validación por fila
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkImportReport" }
+
+  /objects/bulk-import/{importId}/confirm:
+    parameters:
+      - name: importId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ManagedObjects]
+      operationId: confirmBulkImport
+      summary: Confirmar la importación de las filas válidas
+      x-permission: Crear
+      responses:
+        "201":
+          description: Objetos creados en estado Borrador
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkImportReport" }
+
+  /objects/{objectId}:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [ManagedObjects]
+      operationId: getManagedObject
+      summary: Consultar el detalle de un objeto administrado
+      description: US-009. RN-010 — fuera de ámbito responde 404, no 403 (no revela existencia).
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Detalle del objeto (metadatos, propietarios, versiones, grupos, alertas abiertas)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObjectDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [ManagedObjects]
+      operationId: updateManagedObject
+      summary: Editar metadatos de un objeto (genera nueva versión)
+      description: US-006. RN-002 (tipo inmutable), RN-092 (versión con motivo obligatorio).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateManagedObjectRequest" }
+      responses:
+        "200":
+          description: Objeto actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+
+  /objects/{objectId}/owners:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    put:
+      tags: [ManagedObjects]
+      operationId: assignOwners
+      summary: Asignar o reasignar el Propietario Funcional y/o Técnico
+      description: "US-013. RN-087, RN-088 (objetos críticos: personas distintas), RN-089."
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignOwnersRequest" }
+      responses:
+        "200":
+          description: Propietarios actualizados
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+
+  /objects/{objectId}/classification:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    put:
+      tags: [ManagedObjects]
+      operationId: reclassifyObject
+      summary: Cambiar criticidad y/o sensibilidad
+      description: >
+        US-011. RN-003, RN-004, RN-019 (SWIFT), RN-107 (rebajar un objeto
+        Crítico requiere aprobación de Seguridad).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                criticality: { $ref: "#/components/schemas/Criticality" }
+                sensitivity: { $ref: "#/components/schemas/Sensitivity" }
+      responses:
+        "200":
+          description: Clasificación aplicada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+        "202":
+          description: Cambio pendiente de aprobación de Seguridad (rebaja de objeto Crítico)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+
+  /objects/{objectId}/groups:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    put:
+      tags: [ManagedObjects]
+      operationId: setObjectGroups
+      summary: Asignar el objeto a uno o más grupos de acceso
+      description: >
+        US-028. RN-104 (Crítico/Restringido exige grupo con ≥ 2 miembros,
+        nunca un grupo personal).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupIds]
+              properties:
+                groupIds:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Asignación aplicada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+        "409":
+          description: El grupo no cumple el mínimo de miembros o es personal (RN-104)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /objects/{objectId}/state:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    post:
+      tags: [ManagedObjects]
+      operationId: changeObjectState
+      summary: Activar, suspender, desactivar o reactivar el objeto
+      description: US-007. RN-007 (transiciones permitidas), RN-009 (revoca accesos al suspender/desactivar).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [Activate, Suspend, Deactivate, Reactivate] }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Nuevo estado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+        "409":
+          description: Transición no permitida (RN-007) o propietarios inválidos (RN-087)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /objects/{objectId}/deletion-requests:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    post:
+      tags: [ManagedObjects]
+      operationId: requestLogicalDeletion
+      summary: Solicitar la eliminación lógica del objeto
+      description: >
+        US-008. RN-008: aprueba Seguridad si es Crítico (RN-107), un par
+        del grupo si no lo es (RN-106), nadie si el grupo es personal
+        (RN-108), Seguridad si no tiene grupo.
+      x-permission: Eliminar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "201":
+          description: Solicitud de eliminación creada (o eliminación inmediata si es grupo personal)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+
+  /objects/{objectId}/purge:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    post:
+      tags: [ManagedObjects]
+      operationId: purgeManagedObject
+      summary: Eliminar definitivamente un objeto creado por error
+      description: >
+        US-055. RN-109 — solo rol Administrador; objetos Críticos requieren
+        autorización previa de Seguridad (RN-107). Requiere confirmación
+        explícita (repetir el código del objeto).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurgeRequest" }
+      responses:
+        "200":
+          description: Objeto purgado; se conserva el evento OBJECT_PURGED con metadatos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurgeResult" }
+        "202":
+          description: Pendiente de autorización de Seguridad (objeto Crítico)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+        "400":
+          description: Confirmación inválida o motivo faltante
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /objects/{objectId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [ManagedObjects]
+      operationId: listObjectVersions
+      summary: Consultar el historial de versiones
+      description: US-019. RN-092.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Lista de versiones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ObjectVersion" }
+
+  /objects/{objectId}/versions/compare:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [ManagedObjects]
+      operationId: compareObjectVersions
+      summary: Comparar dos versiones del objeto
+      description: US-019. RN-093 — los campos de Sensitive Payload aparecen como «Valor modificado».
+      x-permission: Consultar
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: to
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Diferencias campo a campo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionComparison" }
+
+  # ============================================================
+  # SENSITIVE PAYLOAD
+  # ============================================================
+  /objects/{objectId}/reveal:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    post:
+      tags: [SensitivePayload]
+      operationId: revealSecretValue
+      summary: Revelar el valor sensible de un objeto en modo Normal (sin llave dividida)
+      description: >
+        US-016. Requiere Temporary Access activo (RN-042) o, si el objeto
+        es no crítico ni restringido y está en un grupo personal, acceso
+        directo (RN-108). Exige MFA reciente (≤ 15 min, RNF-SEG-01).
+        El valor se entrega para mostrarse un máximo de 30 s (RN-084).
+      x-permission: Descargar
+      x-returns-sensitive-payload: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                temporaryAccessId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Valor revelado (efímero, no se persiste en el cliente)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevealedValue" }
+        "403":
+          description: Sin acceso temporal vigente (RN-042)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "424":
+          description: No se pudo registrar la auditoría; operación rechazada (fail-closed, RN-079)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /objects/{objectId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    post:
+      tags: [SensitivePayload]
+      operationId: downloadObjectFile
+      summary: Descargar el certificado público, o la llave privada / material de clave con autorización
+      description: >
+        US-017. La descarga pública solo requiere Consultar. La llave
+        privada o el material de clave exige Temporary Access con cuatro
+        ojos (RN-017, RN-026, RN-096), salvo grupo personal con objeto no
+        crítico ni restringido (RN-108) — en la práctica no aplica a llaves
+        privadas/material de clave, que siempre son Restringidos (RN-004).
+      x-permission: Descargar
+      x-returns-sensitive-payload: true
+      parameters:
+        - name: part
+          in: query
+          required: true
+          schema: { type: string, enum: [PublicCertificate, PrivateKeyPfx, KeyMaterial] }
+        - name: temporaryAccessId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Archivo binario (PEM público, o PFX/material con contraseña de un solo uso)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /objects/{objectId}/value:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    put:
+      tags: [SensitivePayload]
+      operationId: updateSecretValue
+      summary: Actualizar o renovar el valor sensible (modo Interno, sin llave dividida)
+      description: US-006. Genera una nueva versión (RN-092, RN-093).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newValue, reason]
+              properties:
+                newValue: { type: string, format: password, writeOnly: true }
+                newExpirationDate: { type: string, format: date-time }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Valor actualizado (nunca se devuelve el valor en la respuesta)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+
+  # ============================================================
+  # SPLIT KEY
+  # ============================================================
+  /objects/{objectId}/split-key:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    put:
+      tags: [SplitKey]
+      operationId: setSplitKeyFlag
+      summary: Marcar o desmarcar el check «Llave dividida»
+      description: >
+        US-056. RN-111, RN-114 — marcarlo exige cargar los dos componentes;
+        desmarcarlo exige aprobación de Seguridad y un valor nuevo. Solo
+        aplica a custodia Interna (RN-116).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [splitKey]
+              properties:
+                splitKey: { type: boolean }
+                combinationMethod: { $ref: "#/components/schemas/CombinationMethod" }
+      responses:
+        "200":
+          description: Check aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedObject" }
+        "202":
+          description: Desmarcar el check queda pendiente de aprobación de Seguridad
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+
+  /objects/{objectId}/custodians:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [SplitKey]
+      operationId: listCustodians
+      summary: Consultar los custodios designados de un objeto con llave dividida
+      description: US-058. RN-117.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Custodios por lado (Usuario / Seguridad)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CustodianDesignation" }
+    post:
+      tags: [SplitKey]
+      operationId: designateCustodian
+      summary: Designar un custodio (titular o suplente) de un componente
+      description: >
+        US-058. RN-117 — de 1 a 2 custodios por lado; el Responsable del
+        grupo designa los del componente de usuario, el responsable de
+        Seguridad los del componente de Seguridad.
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, side]
+              properties:
+                userId: { type: string, format: uuid }
+                side: { $ref: "#/components/schemas/ComponentSide" }
+      responses:
+        "201":
+          description: Custodio designado, pendiente de aceptación
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodianDesignation" }
+
+  /objects/{objectId}/custodians/{custodianId}/accept:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+      - name: custodianId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [SplitKey]
+      operationId: acceptCustodianDesignation
+      summary: Aceptar formalmente la designación como custodio (con MFA)
+      description: RN-117. El objeto no se activa sin al menos un custodio aceptado por lado.
+      x-permission: Modificar
+      responses:
+        "200":
+          description: Designación aceptada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodianDesignation" }
+
+  /objects/{objectId}/split-key/components/{side}:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+      - name: side
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/ComponentSide" }
+    put:
+      tags: [SplitKey]
+      operationId: setKeyComponent
+      summary: Registrar o renovar el componente del usuario o de Seguridad
+      description: >
+        US-057. RN-113 — solo el custodio designado y aceptado de ese lado
+        puede llamar este endpoint; el otro lado nunca ve este valor.
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: string, format: password, writeOnly: true }
+      responses:
+        "200":
+          description: Componente registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyComponent" }
+
+  /objects/{objectId}/split-key/components/{side}/reveal:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+      - name: side
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/ComponentSide" }
+    post:
+      tags: [SplitKey]
+      operationId: revealKeyComponent
+      summary: Revelar el componente del usuario o de Seguridad
+      description: >
+        US-057. RN-115 — el componente de Seguridad solo se revela mientras
+        exista un Temporary Access aprobado y vigente sobre el objeto, y
+        nunca si el custodio de Seguridad es quien solicitó el acceso.
+        Nunca se combina ni se entrega el valor completo (RN-113).
+      x-permission: Descargar
+      x-returns-sensitive-payload: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                temporaryAccessId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Componente revelado (solo el del lado solicitado)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevealedValue" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /security/guard-schedule:
+    get:
+      tags: [SplitKey]
+      operationId: getSecurityGuardSchedule
+      summary: Consultar el calendario de guardia 24x7 de Seguridad
+      description: US-058. RN-118.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Calendario de guardia
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GuardSchedule" }
+    put:
+      tags: [SplitKey]
+      operationId: setSecurityGuardSchedule
+      summary: Actualizar el calendario de guardia
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GuardSchedule" }
+      responses:
+        "200":
+          description: Calendario actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GuardSchedule" }
+
+  # ============================================================
+  # ACCESS GOVERNANCE
+  # ============================================================
+  /access-policies:
+    get:
+      tags: [AccessGovernance]
+      operationId: listAccessPolicies
+      summary: Listar políticas de acceso
+      description: US-032. RN-044 a RN-046.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Políticas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AccessPolicy" }
+    post:
+      tags: [AccessGovernance]
+      operationId: createAccessPolicy
+      summary: Proponer una política de acceso
+      description: >
+        US-032. RN-046 — requiere cuatro ojos de Seguridad para entrar en
+        vigencia. RN-045 fija los flujos por defecto (Crítico → Seguridad;
+        Restringido no crítico → par del grupo).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAccessPolicyRequest" }
+      responses:
+        "202":
+          description: Política creada, pendiente de aprobación de Seguridad
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessPolicy" }
+
+  /access-policies/{policyId}/simulate:
+    parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [AccessGovernance]
+      operationId: simulateAccessPolicy
+      summary: Simular el flujo de aprobación resultante para un objeto y una acción
+      x-permission: Consultar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectId, action]
+              properties:
+                objectId: { type: string, format: uuid }
+                action: { $ref: "#/components/schemas/AccessActionType" }
+      responses:
+        "200":
+          description: Flujo resultante
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicySimulationResult" }
+
+  /access-requests:
+    get:
+      tags: [AccessGovernance]
+      operationId: listAccessRequests
+      summary: Listar solicitudes de acceso (propias o pendientes de mi aprobación)
+      description: US-031, US-033.
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: scope
+          in: query
+          schema: { type: string, enum: [Mine, PendingForMe, All], default: Mine }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/RequestState" }
+      responses:
+        "200":
+          description: Página de solicitudes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAccessRequests" }
+    post:
+      tags: [AccessGovernance]
+      operationId: submitAccessRequest
+      summary: Enviar una solicitud de acceso
+      description: >
+        US-031. RN-047 (justificación ≥ 20 caracteres, ventana, aprobador),
+        RN-048 (duración máxima), RN-050 (objeto debe estar Activo).
+      x-permission: Consultar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAccessRequest" }
+      responses:
+        "201":
+          description: Solicitud creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+        "400":
+          description: Justificación insuficiente o duración fuera de política
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: Sin aprobadores elegibles (RN-106) u objeto no elegible (RN-050)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /access-requests/{requestId}:
+    parameters:
+      - $ref: "#/components/parameters/RequestIdParam"
+    get:
+      tags: [AccessGovernance]
+      operationId: getAccessRequest
+      summary: Consultar el detalle de una solicitud
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Solicitud
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequestDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /access-requests/{requestId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/RequestIdParam"
+    post:
+      tags: [AccessGovernance]
+      operationId: cancelAccessRequest
+      summary: Cancelar mi propia solicitud
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Solicitud cancelada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+
+  /access-requests/{requestId}/approvals:
+    parameters:
+      - $ref: "#/components/parameters/RequestIdParam"
+    post:
+      tags: [AccessGovernance]
+      operationId: decideApproval
+      summary: Aprobar o rechazar un nivel de la solicitud
+      description: >
+        US-033. RN-051 (comentario obligatorio en rechazo), RN-054 (sin
+        autoaprobación), RN-106 (par del grupo en Restringidos no críticos),
+        RN-122 (Seguridad titular/suplente en Críticos, nunca un par).
+      x-permission: Aprobar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [Approved, Rejected] }
+                comment: { type: string }
+      responses:
+        "200":
+          description: Decisión registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequestDetail" }
+        "403":
+          description: Autoaprobación, aprobador no elegible o rol incorrecto (RN-054, RN-106, RN-122)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /temporary-access:
+    get:
+      tags: [AccessGovernance]
+      operationId: listMyTemporaryAccess
+      summary: Consultar mis accesos temporales (activos e históricos)
+      description: US-034.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Lista de accesos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TemporaryAccess" }
+
+  /temporary-access/{accessId}/activate:
+    parameters:
+      - name: accessId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [AccessGovernance]
+      operationId: activateJitAccess
+      summary: Activar un acceso Just-In-Time dentro de su ventana de activación
+      description: US-034. RN-056.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Acceso activado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemporaryAccess" }
+        "410":
+          description: Ventana de activación vencida
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /temporary-access/{accessId}/revoke:
+    parameters:
+      - name: accessId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [AccessGovernance]
+      operationId: revokeTemporaryAccess
+      summary: Revocar manualmente un acceso temporal
+      description: US-035. RN-058.
+      x-permission: Modificar
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Acceso revocado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemporaryAccess" }
+
+  # ============================================================
+  # EXPIRATION & ALERTS
+  # ============================================================
+  /expiration-policies:
+    get:
+      tags: [Expiration]
+      operationId: listExpirationPolicies
+      summary: Listar políticas de expiración
+      description: US-020. RN-061 a RN-063.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Políticas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ExpirationPolicy" }
+    post:
+      tags: [Expiration]
+      operationId: createExpirationPolicy
+      summary: Crear una política de expiración
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateExpirationPolicyRequest" }
+      responses:
+        "201":
+          description: Política creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpirationPolicy" }
+
+  /alerts:
+    get:
+      tags: [Expiration]
+      operationId: searchAlerts
+      summary: Buscar alertas (vencimiento, huérfano, hallazgo, integridad)
+      description: US-022, US-024. RN-064 a RN-071.
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: severity
+          in: query
+          schema: { $ref: "#/components/schemas/AlertSeverity" }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/AlertState" }
+        - name: objectId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Página de alertas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAlerts" }
+
+  /alerts/{alertId}/acknowledge:
+    parameters:
+      - name: alertId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Expiration]
+      operationId: acknowledgeAlert
+      summary: Reconocer una alerta (no la resuelve)
+      description: US-024. RN-070.
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: { type: string }
+      responses:
+        "200":
+          description: Alerta reconocida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+
+  # ============================================================
+  # AUDIT & USAGE
+  # ============================================================
+  /audit-events:
+    get:
+      tags: [Audit]
+      operationId: searchAuditEvents
+      summary: Consultar la bitácora de auditoría
+      description: US-038. RN-010 (ámbito), nunca incluye Sensitive Payload (RN-085).
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actorId
+          in: query
+          schema: { type: string }
+        - name: resourceId
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: result
+          in: query
+          schema: { type: string, enum: [Success, Denied, Failed] }
+        - name: correlationId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Página de eventos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAuditEvents" }
+
+  /audit-events/export:
+    post:
+      tags: [Audit]
+      operationId: exportAuditEvents
+      summary: Exportar eventos de auditoría filtrados
+      description: US-038. RN-101 (marca de agua, permiso Exportar).
+      x-permission: Exportar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExportRequest" }
+      responses:
+        "202":
+          description: Exportación en proceso (asíncrona si supera el umbral síncrono)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportJob" }
+
+  /audit-events/integrity:
+    get:
+      tags: [Audit]
+      operationId: getAuditIntegrityStatus
+      summary: Consultar el resultado de la última verificación de integridad de la cadena
+      description: US-037. RN-076.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Resultado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditIntegrityResult" }
+    post:
+      tags: [Audit]
+      operationId: runAuditIntegrityCheck
+      summary: Ejecutar la verificación de integridad bajo demanda
+      x-permission: Consultar
+      responses:
+        "202":
+          description: Verificación en proceso
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditIntegrityResult" }
+
+  /objects/{objectId}/audit-timeline:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [Audit]
+      operationId: getObjectAuditTimeline
+      summary: Consultar la línea de tiempo de auditoría de un objeto
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Eventos en orden cronológico
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEvent" }
+
+  /objects/{objectId}/usage-events:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [Audit]
+      operationId: getObjectUsageEvents
+      summary: Consultar los eventos de uso de un objeto
+      description: US-039. RN-072 a RN-074.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Eventos de uso
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/UsageEvent" }
+
+  /daily-security-reviews:
+    get:
+      tags: [Audit]
+      operationId: listDailySecurityReviews
+      summary: Listar los reportes diarios de eventos de seguridad
+      description: US-059. RN-119, RNF-AUD-07.
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Página de reportes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedDailySecurityReviews" }
+
+  /daily-security-reviews/{reviewId}/review:
+    parameters:
+      - name: reviewId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Audit]
+      operationId: markDailySecurityReviewReviewed
+      summary: Marcar el reporte diario como revisado
+      description: US-059. RN-119.
+      x-permission: Consultar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: { type: string }
+      responses:
+        "200":
+          description: Reporte marcado como revisado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailySecurityReview" }
+
+  # ============================================================
+  # FINDINGS
+  # ============================================================
+  /findings:
+    get:
+      tags: [Findings]
+      operationId: searchFindings
+      summary: Buscar hallazgos (huérfanos, expirados, inseguros, no registrados)
+      description: US-050. RN-097, RN-098.
+      x-permission: Consultar
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: category
+          in: query
+          schema: { $ref: "#/components/schemas/FindingCategory" }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/FindingState" }
+      responses:
+        "200":
+          description: Página de hallazgos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedFindings" }
+
+  /findings/{findingId}/accept-risk:
+    parameters:
+      - name: findingId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Findings]
+      operationId: acceptFindingRisk
+      summary: Aceptar el riesgo de un hallazgo
+      description: US-050. RN-098 — requiere justificación, fecha de revisión y aprobación de Seguridad.
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [justification, reviewDate]
+              properties:
+                justification: { type: string }
+                reviewDate: { type: string, format: date }
+      responses:
+        "202":
+          description: Aceptación pendiente de aprobación de Seguridad
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscoveryFinding" }
+
+  /findings/{findingId}/discard:
+    parameters:
+      - name: findingId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Findings]
+      operationId: discardFinding
+      summary: Descartar un hallazgo
+      x-permission: Modificar
+      responses:
+        "200":
+          description: Hallazgo descartado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscoveryFinding" }
+
+  # ============================================================
+  # COMPLIANCE
+  # ============================================================
+  /compliance-controls:
+    get:
+      tags: [Compliance]
+      operationId: listComplianceControls
+      summary: Listar los controles de cumplimiento configurados
+      description: US-052. RN-102.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Controles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ComplianceControl" }
+
+  /compliance-controls/{controlId}/results:
+    parameters:
+      - name: controlId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Compliance]
+      operationId: getComplianceControlResults
+      summary: Consultar la serie histórica de resultados de un control
+      x-permission: Consultar
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Serie histórica
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ControlResult" }
+
+  /evidence-packages:
+    post:
+      tags: [Compliance]
+      operationId: createEvidencePackage
+      summary: Generar un paquete de evidencia
+      description: US-044. RN-100 — manifiesto firmado con huella SHA-256 por archivo, sin Sensitive Payloads.
+      x-permission: Exportar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEvidencePackageRequest" }
+      responses:
+        "202":
+          description: Paquete en generación
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidencePackage" }
+    get:
+      tags: [Compliance]
+      operationId: listEvidencePackages
+      summary: Listar paquetes de evidencia generados
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Paquetes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EvidencePackage" }
+
+  /evidence-packages/{packageId}:
+    parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Compliance]
+      operationId: getEvidencePackage
+      summary: Consultar/descargar un paquete de evidencia y su manifiesto
+      x-permission: Exportar
+      responses:
+        "200":
+          description: Metadatos y manifiesto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidencePackage" }
+
+  # ============================================================
+  # DASHBOARDS & REPORTS
+  # ============================================================
+  /dashboards/operational:
+    get:
+      tags: [Dashboards]
+      operationId: getOperationalDashboard
+      summary: Consultar el dashboard operativo (según el ámbito del usuario)
+      description: US-041. RN-010.
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Indicadores operativos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationalDashboard" }
+
+  /dashboards/executive:
+    get:
+      tags: [Dashboards]
+      operationId: getExecutiveDashboard
+      summary: Consultar el dashboard ejecutivo (riesgo y cumplimiento)
+      description: US-042.
+      x-permission: Consultar
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Indicadores ejecutivos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutiveDashboard" }
+
+  /reports/{reportKey}:
+    parameters:
+      - name: reportKey
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+            - FullInventory
+            - ObjectsByOwner
+            - UpcomingExpirations
+            - ExpiredObjects
+            - AlertsAndEscalations
+            - RequestsAndApprovals
+            - ActiveAndHistoricalTemporaryAccess
+            - ObjectsWithoutUsage
+            - OrphanObjects
+            - InsecureConfigurationObjects
+            - AuditActivityByUserOrObject
+            - ExecutiveRiskSummary
+            - ComplianceByArea
+            - PrivilegedAccessSummary
+    get:
+      tags: [Reports]
+      operationId: getReport
+      summary: Generar un reporte operativo o ejecutivo predefinido
+      description: US-043.
+      x-permission: Consultar
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: areaId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Datos del reporte
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportResult" }
+
+  /reports/{reportKey}/export:
+    parameters:
+      - name: reportKey
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Reports]
+      operationId: exportReport
+      summary: Exportar un reporte a PDF, Excel o CSV
+      description: US-045. RN-101 (marca de agua), CSV/Excel escapados (anti-inyección de fórmulas).
+      x-permission: Exportar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [format]
+              properties:
+                format: { type: string, enum: [Pdf, Excel, Csv] }
+                from: { type: string, format: date }
+                to: { type: string, format: date }
+      responses:
+        "202":
+          description: Exportación en proceso
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportJob" }
+
+  # ============================================================
+  # APPLICATIONS — FASE 2 (documentado, no se implementa en F1)
+  # ============================================================
+  /applications/{applicationId}/objects/{objectId}/retrieve:
+    x-phase: F2
+    parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [Applications]
+      operationId: retrieveSecretForApplication
+      summary: "[Fase 2, DEC-03] Recuperar un secreto con identidad de aplicación"
+      description: >
+        Fuera de alcance de la Fase 1 (DEC-03). Documentado para diseño
+        futuro: autenticación por certificado de cliente (RNF-SEG-08),
+        nunca objetos con llave dividida (RN-116).
+      x-permission: Descargar
+      x-returns-sensitive-payload: true
+      security:
+        - applicationCredentials: []
+      responses:
+        "200":
+          description: Valor del secreto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevealedValue" }
+        "501":
+          description: No implementado en la Fase 1
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /applications/{applicationId}/usage-notifications:
+    x-phase: F2/F1
+    parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Applications]
+      operationId: notifyApplicationUsage
+      summary: Notificar el uso de un objeto no recuperado vía API
+      description: >
+        Disponible desde la Fase 1 (RN-072). Permite a una aplicación
+        informar el uso de un objeto cuyo valor obtuvo por un canal fuera
+        de esta API (por ejemplo, ya configurado en el sistema destino).
+      x-permission: Modificar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectId, action]
+              properties:
+                objectId: { type: string, format: uuid }
+                action: { type: string }
+      responses:
+        "202":
+          description: Uso registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsageEvent" }
+
+components:
+
+  securitySchemes:
+    entraIdAuth:
+      type: oauth2
+      description: >
+        Autenticación de usuarios de la plataforma (Front-End y clientes
+        interactivos) contra Microsoft Entra ID. RN-030, RN-032, RNF-SEG-01.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token
+          scopes:
+            api://pgccs/access_as_user: Acceso interactivo a la API en nombre del usuario autenticado
+    applicationCredentials:
+      type: oauth2
+      description: >
+        [Fase 2] Autenticación de aplicaciones consumidoras mediante
+        credenciales de cliente con certificado (RNF-SEG-08); no se admiten
+        client secrets en producción.
+      flows:
+        clientCredentials:
+          tokenUrl: https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token
+          scopes:
+            api://pgccs/.default: Acceso de aplicación con permisos asignados
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 25 }
+    ObjectIdParam:
+      name: objectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identificador interno del ManagedObject (no confundir con el ObjectCode OBJ-NNNNNN)
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    GroupIdParam:
+      name: groupId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RequestIdParam:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: No autenticado
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    Forbidden:
+      description: Autenticado pero sin permiso (denegación por defecto, RN-040)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotFound:
+      description: >
+        No encontrado. Un objeto fuera del ámbito del usuario también
+        responde 404, nunca 403, para no revelar su existencia (RN-010).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  schemas:
+
+    ProblemDetails:
+      type: object
+      description: RFC 7807. Nunca incluye detalle interno ni valores sensibles.
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        correlationId: { type: string, format: uuid }
+
+    # ---------- Enumeraciones (domain-model.md §10) ----------
+    ObjectType:
+      type: string
+      enum: [Certificate, CryptographicKey, Secret, Credential, ServiceAccount]
+    Criticality:
+      type: string
+      enum: [Crítico, Alto, Medio, Bajo]
+    Sensitivity:
+      type: string
+      enum: [Pública, Interna, Confidencial, Restringida]
+    Environment:
+      type: string
+      enum: [Producción, ContingenciaDR, PreproducciónUAT, QA, Desarrollo]
+    LifecycleState:
+      type: string
+      enum: [Borrador, Activo, Suspendido, Desactivado, Eliminado, Purgado]
+    ExpirationStatus:
+      type: string
+      enum: [Vigente, PróximoAVencer, Expirado, SinVencimiento]
+    CustodyMode:
+      type: string
+      enum: [Internal, MetadataOnly]
+    OwnerRole:
+      type: string
+      enum: [Funcional, Técnico]
+    RoleName:
+      type: string
+      enum: [Administrador, Custodio, Propietario, Operador, Auditor, Seguridad]
+    Scope:
+      type: object
+      properties:
+        kind: { type: string, enum: [Global, Area, Application, Group, Object] }
+        referenceId: { type: string, format: uuid, nullable: true }
+    RequestState:
+      type: string
+      enum: [Borrador, Pendiente, EnAprobación, Aprobada, Rechazada, Cancelada, Expirada]
+    TemporaryAccessState:
+      type: string
+      enum: [Programado, Disponible, Activo, Expirado, Revocado]
+    AlertSeverity:
+      type: string
+      enum: [Baja, Media, Alta, Crítica]
+    AlertState:
+      type: string
+      enum: [Generada, Enviada, Reconocida, Escalada, Resuelta, CerradaAutomáticamente]
+    ComponentSide:
+      type: string
+      enum: [Usuario, Seguridad]
+    CombinationMethod:
+      type: string
+      enum: [Concatenación, XOR, ContraseñaDivididaPfx]
+    FindingCategory:
+      type: string
+      enum: [NoRegistrado, Huérfano, Expirado, ConfiguraciónInsegura]
+    FindingState:
+      type: string
+      enum: [Abierto, EnGestión, Resuelto, RiesgoAceptado, Descartado]
+    PurgeReasonCatalog:
+      type: string
+      enum: [CreadoPorError, Duplicado, DatosIncorrectos, Otro]
+    AccessActionType:
+      type: string
+      enum: [Reveal, DownloadPrivateKey, DownloadKeyMaterial, ModifyValue, Delete]
+
+    # ---------- Identidad ----------
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entraObjectId: { type: string }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        status: { type: string, enum: [Active, Disabled] }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleAssignment" }
+    RoleAssignment:
+      type: object
+      properties:
+        role: { $ref: "#/components/schemas/RoleName" }
+        scope: { $ref: "#/components/schemas/Scope" }
+        status: { type: string, enum: [Active, PendingApproval] }
+    EffectivePermissions:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleName" }
+        groupIds:
+          type: array
+          items: { type: string, format: uuid }
+        permissions:
+          type: array
+          items:
+            type: object
+            properties:
+              action: { type: string }
+              scope: { $ref: "#/components/schemas/Scope" }
+    PagedUsers:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/User" }
+    EmergencyAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        linkedUserId: { type: string, format: uuid }
+        accountName: { type: string }
+        role: { $ref: "#/components/schemas/RoleName" }
+        status: { type: string, enum: [Disabled, Approved, Locked] }
+    CreateEmergencyAccountRequest:
+      type: object
+      required: [linkedUserId]
+      properties:
+        linkedUserId: { type: string, format: uuid }
+    EmergencyActivationStatus:
+      type: object
+      properties:
+        active: { type: boolean }
+        activatedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        pendingActor: { type: string, enum: [Administrator, Security, None] }
+
+    # ---------- Grupos ----------
+    SecurityGroup:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: GRP-000123 }
+        name: { type: string }
+        description: { type: string }
+        areaId: { type: string, format: uuid, nullable: true }
+        isPersonal: { type: boolean, readOnly: true }
+        status: { type: string, enum: [Activo, Inactivo] }
+        memberCount: { type: integer, readOnly: true }
+    SecurityGroupDetail:
+      allOf:
+        - $ref: "#/components/schemas/SecurityGroup"
+        - type: object
+          properties:
+            responsibles:
+              type: array
+              items: { type: string, format: uuid }
+            members:
+              type: array
+              items: { $ref: "#/components/schemas/GroupMember" }
+            notificationSettings:
+              type: object
+              additionalProperties: { type: boolean }
+            assignedObjectCount: { type: integer }
+    GroupMember:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        addedAt: { type: string, format: date-time }
+        addedBy: { type: string, format: uuid }
+    CreateGroupRequest:
+      type: object
+      required: [name, responsibleUserId]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        areaId: { type: string, format: uuid }
+        responsibleUserId: { type: string, format: uuid }
+    UpdateGroupRequest:
+      type: object
+      properties:
+        responsibles:
+          type: array
+          items: { type: string, format: uuid }
+        notificationSettings:
+          type: object
+          additionalProperties: { type: boolean }
+        status: { type: string, enum: [Activo, Inactivo] }
+    PagedSecurityGroups:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/SecurityGroup" }
+
+    # ---------- Managed Objects ----------
+    ManagedObjectBase:
+      type: object
+      required: [type, name, criticality, sensitivity, environment, areaId]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        code: { type: string, readOnly: true, example: OBJ-000123 }
+        type: { $ref: "#/components/schemas/ObjectType" }
+        subtype: { type: string }
+        name: { type: string }
+        description: { type: string }
+        criticality: { $ref: "#/components/schemas/Criticality" }
+        sensitivity: { $ref: "#/components/schemas/Sensitivity" }
+        environment: { $ref: "#/components/schemas/Environment" }
+        areaId: { type: string, format: uuid }
+        applicationIds:
+          type: array
+          items: { type: string, format: uuid }
+        functionalOwnerId: { type: string, format: uuid, nullable: true }
+        technicalOwnerId: { type: string, format: uuid, nullable: true }
+        lifecycleState: { $ref: "#/components/schemas/LifecycleState", readOnly: true }
+        expirationStatus: { $ref: "#/components/schemas/ExpirationStatus", readOnly: true }
+        expirationDate: { type: string, format: date-time, nullable: true }
+        noExpirationJustified: { type: boolean, default: false }
+        custodyMode: { $ref: "#/components/schemas/CustodyMode" }
+        splitKey: { type: boolean, default: false }
+        insecureConfiguration: { type: boolean, readOnly: true }
+        tags:
+          type: array
+          items: { type: string }
+        currentVersion: { type: integer, readOnly: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true, readOnly: true }
+        createdBy: { type: string, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        modifiedBy: { type: string, readOnly: true }
+        modifiedAt: { type: string, format: date-time, readOnly: true }
+
+    CredentialFields:
+      type: object
+      properties:
+        targetSystem: { type: string }
+        accountName: { type: string }
+        authenticationType: { type: string }
+        lastChangedAt: { type: string, format: date-time }
+        maxRotationDays: { type: integer }
+
+    CertificateFields:
+      type: object
+      properties:
+        subject: { type: string }
+        issuer: { type: string }
+        serialNumber: { type: string }
+        subjectAlternativeNames:
+          type: array
+          items: { type: string }
+        notBefore: { type: string, format: date-time, readOnly: true }
+        notAfter: { type: string, format: date-time, readOnly: true }
+        thumbprintSha256: { type: string, readOnly: true }
+        signatureAlgorithm: { type: string, readOnly: true }
+        keyAlgorithm: { type: string, readOnly: true }
+        keySize: { type: integer, readOnly: true }
+        hasPrivateKey: { type: boolean, readOnly: true }
+        installationLocations:
+          type: array
+          items: { type: string }
+
+    SecretFields:
+      type: object
+      properties:
+        issuerProvider: { type: string }
+        clientId: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        issuedAt: { type: string, format: date-time }
+
+    CryptographicKeyFields:
+      type: object
+      properties:
+        algorithm: { type: string }
+        keyLength: { type: integer }
+        keyUsage:
+          type: array
+          items: { type: string, enum: [Encrypt, Decrypt, Sign, Verify, Wrap, Unwrap] }
+        generatedAt: { type: string, format: date-time }
+        cryptoperiodDays: { type: integer }
+        keyCheckValue: { type: string, readOnly: true }
+
+    ServiceAccountFields:
+      type: object
+      properties:
+        directorySource: { type: string, enum: [EntraID, AD, Local, Database] }
+        accountIdentifier: { type: string }
+        accountKind: { type: string }
+        consumingApplicationIds:
+          type: array
+          items: { type: string, format: uuid }
+        declaredPrivileges: { type: string }
+        interactiveLogonAllowed: { type: boolean }
+        linkedObjectIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    ManagedObject:
+      allOf:
+        - $ref: "#/components/schemas/ManagedObjectBase"
+        - type: object
+          properties:
+            credential: { $ref: "#/components/schemas/CredentialFields" }
+            certificate: { $ref: "#/components/schemas/CertificateFields" }
+            secret: { $ref: "#/components/schemas/SecretFields" }
+            cryptographicKey: { $ref: "#/components/schemas/CryptographicKeyFields" }
+            serviceAccount: { $ref: "#/components/schemas/ServiceAccountFields" }
+          description: >
+            Solo se completa el bloque correspondiente al `type` del objeto.
+            El campo `Sensitive Payload` JAMÁS aparece en este esquema.
+
+    ManagedObjectDetail:
+      allOf:
+        - $ref: "#/components/schemas/ManagedObject"
+        - type: object
+          properties:
+            groupIds:
+              type: array
+              items: { type: string, format: uuid }
+            openAlertCount: { type: integer }
+            activeTemporaryAccessCount: { type: integer }
+            custodianSummary:
+              $ref: "#/components/schemas/CustodianSummary"
+              nullable: true
+
+    CustodianSummary:
+      type: object
+      properties:
+        userComponentAcceptedCount: { type: integer }
+        securityComponentAcceptedCount: { type: integer }
+
+    CreateManagedObjectRequest:
+      allOf:
+        - $ref: "#/components/schemas/ManagedObjectBase"
+        - type: object
+          properties:
+            credential: { $ref: "#/components/schemas/CredentialFields" }
+            certificate: { $ref: "#/components/schemas/CertificateFields" }
+            secret: { $ref: "#/components/schemas/SecretFields" }
+            cryptographicKey: { $ref: "#/components/schemas/CryptographicKeyFields" }
+            serviceAccount: { $ref: "#/components/schemas/ServiceAccountFields" }
+            certificateFileBase64: { type: string, format: byte, description: PEM/DER/CER/PFX (RN-015) }
+            certificateContainerPassword: { type: string, format: password, writeOnly: true }
+            initialValue: { type: string, format: password, writeOnly: true, description: "Sensitive Payload en modo Interno (RN-022, ≤64KB)" }
+            keyMaterialBase64: { type: string, format: byte, writeOnly: true }
+
+    UpdateManagedObjectRequest:
+      type: object
+      required: [reason]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        applicationIds:
+          type: array
+          items: { type: string, format: uuid }
+        reason: { type: string }
+
+    AssignOwnersRequest:
+      type: object
+      properties:
+        functionalOwnerId: { type: string, format: uuid }
+        technicalOwnerId: { type: string, format: uuid }
+
+    ObjectVersion:
+      type: object
+      properties:
+        versionNumber: { type: integer }
+        changedBy: { type: string }
+        changedAtUtc: { type: string, format: date-time }
+        reason: { type: string }
+        changedFields:
+          type: array
+          items: { type: string }
+
+    VersionComparison:
+      type: object
+      properties:
+        objectId: { type: string, format: uuid }
+        fromVersion: { type: integer }
+        toVersion: { type: integer }
+        differences:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              before: { type: string, description: "«Valor modificado» si es Sensitive Payload (RN-093)" }
+              after: { type: string }
+
+    PagedManagedObjects:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/ManagedObject" }
+
+    BulkImportReport:
+      type: object
+      properties:
+        importId: { type: string, format: uuid }
+        totalRows: { type: integer }
+        validRows: { type: integer }
+        errorRows: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              row: { type: integer }
+              field: { type: string }
+              message: { type: string }
+
+    PurgeRequest:
+      type: object
+      required: [reasonCode, description, confirmCode]
+      properties:
+        reasonCode: { $ref: "#/components/schemas/PurgeReasonCatalog" }
+        description: { type: string }
+        confirmCode: { type: string, description: Debe coincidir con el ObjectCode (RN-109) }
+
+    PurgeResult:
+      type: object
+      properties:
+        objectId: { type: string, format: uuid }
+        purgedAt: { type: string, format: date-time }
+        auditEventId: { type: string, format: uuid, description: Evento OBJECT_PURGED (RN-109) }
+
+    # ---------- Sensitive Payload / Split Key ----------
+    RevealedValue:
+      type: object
+      properties:
+        value: { type: string, description: Valor efímero; el cliente debe descartarlo tras mostrarlo (RN-084) }
+        component: { $ref: "#/components/schemas/ComponentSide", nullable: true }
+        expiresInSeconds: { type: integer, example: 30 }
+        auditEventId: { type: string, format: uuid }
+
+    KeyComponent:
+      type: object
+      properties:
+        objectId: { type: string, format: uuid }
+        side: { $ref: "#/components/schemas/ComponentSide" }
+        combinationMethod: { $ref: "#/components/schemas/CombinationMethod" }
+        keyCheckValue: { type: string, nullable: true }
+        version: { type: integer }
+        enteredBy: { type: string }
+        enteredAt: { type: string, format: date-time }
+
+    CustodianDesignation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        objectId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        side: { $ref: "#/components/schemas/ComponentSide" }
+        isPrimary: { type: boolean }
+        status: { type: string, enum: [PendingAcceptance, Accepted] }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+
+    GuardSchedule:
+      type: object
+      properties:
+        shifts:
+          type: array
+          items:
+            type: object
+            properties:
+              userId: { type: string, format: uuid }
+              startAt: { type: string, format: date-time }
+              endAt: { type: string, format: date-time }
+
+    # ---------- Access Governance ----------
+    AccessPolicy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer }
+        condition:
+          type: object
+          properties:
+            type: { $ref: "#/components/schemas/ObjectType" }
+            subtype: { type: string, nullable: true }
+            criticality: { $ref: "#/components/schemas/Criticality" }
+            sensitivity: { $ref: "#/components/schemas/Sensitivity" }
+            environment: { $ref: "#/components/schemas/Environment" }
+            action: { $ref: "#/components/schemas/AccessActionType" }
+        levels:
+          type: array
+          items:
+            type: object
+            properties:
+              level: { type: integer }
+              approverKind: { type: string, enum: [FunctionalOwner, TechnicalOwner, AreaCustodian, SecurityGroupPeer, Security] }
+        maxDurationMinutes: { type: integer }
+        allowJit: { type: boolean }
+        status: { type: string, enum: [PendingApproval, Active, Superseded] }
+
+    CreateAccessPolicyRequest:
+      type: object
+      properties:
+        condition: { type: object }
+        levels: { type: array, items: { type: object } }
+        maxDurationMinutes: { type: integer }
+        allowJit: { type: boolean }
+
+    PolicySimulationResult:
+      type: object
+      properties:
+        objectId: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/AccessActionType" }
+        resolvedPolicyId: { type: string, format: uuid }
+        levels: { type: integer }
+        eligibleApproverIds:
+          type: array
+          items: { type: string, format: uuid }
+        maxDurationMinutes: { type: integer }
+
+    ApprovalDecision:
+      type: object
+      properties:
+        level: { type: integer }
+        approverId: { type: string, format: uuid }
+        decision: { type: string, enum: [Approved, Rejected] }
+        comment: { type: string, nullable: true }
+        decidedAtUtc: { type: string, format: date-time }
+
+    AccessRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        requesterId: { type: string, format: uuid }
+        objectIds:
+          type: array
+          items: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/AccessActionType" }
+        justification: { type: string }
+        requestedStartAt: { type: string, format: date-time }
+        requestedDurationMinutes: { type: integer }
+        jit: { type: boolean }
+        state: { $ref: "#/components/schemas/RequestState" }
+        createdAt: { type: string, format: date-time }
+
+    AccessRequestDetail:
+      allOf:
+        - $ref: "#/components/schemas/AccessRequest"
+        - type: object
+          properties:
+            approvals:
+              type: array
+              items: { $ref: "#/components/schemas/ApprovalDecision" }
+            eligibleApproverIds:
+              type: array
+              items: { type: string, format: uuid }
+
+    CreateAccessRequest:
+      type: object
+      required: [objectIds, action, justification, requestedStartAt, requestedDurationMinutes]
+      properties:
+        objectIds:
+          type: array
+          items: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/AccessActionType" }
+        justification: { type: string, minLength: 20 }
+        requestedStartAt: { type: string, format: date-time }
+        requestedDurationMinutes: { type: integer }
+        jit: { type: boolean, default: false }
+        preferredApproverId: { type: string, format: uuid, nullable: true }
+        ticketReference: { type: string, nullable: true }
+
+    PagedAccessRequests:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AccessRequest" }
+
+    TemporaryAccess:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        objectId: { type: string, format: uuid }
+        beneficiaryId: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        state: { $ref: "#/components/schemas/TemporaryAccessState" }
+        originRequestId: { type: string, format: uuid }
+
+    # ---------- Expiration & Alerts ----------
+    ExpirationPolicy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        appliesToType: { $ref: "#/components/schemas/ObjectType" }
+        appliesToSubtype: { type: string, nullable: true }
+        appliesToCriticality: { $ref: "#/components/schemas/Criticality", nullable: true }
+        thresholdDays:
+          type: array
+          items: { type: integer }
+          example: [180, 120, 90, 60, 30, 15, 7, 1]
+        escalationRules:
+          type: array
+          items:
+            type: object
+            properties:
+              severity: { $ref: "#/components/schemas/AlertSeverity" }
+              acknowledgeWithinHours: { type: integer }
+        maxValidityDays: { type: integer, nullable: true }
+
+    CreateExpirationPolicyRequest:
+      type: object
+      properties:
+        appliesToType: { $ref: "#/components/schemas/ObjectType" }
+        appliesToSubtype: { type: string }
+        appliesToCriticality: { $ref: "#/components/schemas/Criticality" }
+        thresholdDays:
+          type: array
+          items: { type: integer }
+        maxValidityDays: { type: integer }
+
+    Alert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        objectId: { type: string, format: uuid }
+        thresholdDays: { type: integer, nullable: true }
+        severity: { $ref: "#/components/schemas/AlertSeverity" }
+        state: { $ref: "#/components/schemas/AlertState" }
+        createdAt: { type: string, format: date-time }
+        acknowledgedBy: { type: string, nullable: true }
+        acknowledgedAt: { type: string, format: date-time, nullable: true }
+        escalationLevel: { type: integer, default: 1 }
+
+    PagedAlerts:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Alert" }
+
+    # ---------- Audit ----------
+    AuditEvent:
+      type: object
+      properties:
+        sequenceNumber: { type: integer, format: int64 }
+        timestampUtc: { type: string, format: date-time }
+        actorType: { type: string, enum: [User, Application, System] }
+        actorId: { type: string }
+        effectiveRoles:
+          type: array
+          items: { type: string }
+        action: { type: string }
+        resourceType: { type: string }
+        resourceId: { type: string }
+        result: { type: string, enum: [Success, Denied, Failed] }
+        sourceIp: { type: string }
+        correlationId: { type: string, format: uuid }
+        beforeState: { type: string, nullable: true, description: "Sensitive Payload enmascarado como [PROTEGIDO] (RN-077)" }
+        afterState: { type: string, nullable: true }
+        hash: { type: string }
+
+    PagedAuditEvents:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AuditEvent" }
+
+    UsageEvent:
+      type: object
+      properties:
+        objectId: { type: string, format: uuid }
+        actorType: { type: string, enum: [User, Application] }
+        actorId: { type: string }
+        applicationId: { type: string, format: uuid, nullable: true }
+        action: { type: string }
+        timestampUtc: { type: string, format: date-time }
+        channel: { type: string, enum: [UI, API] }
+        result: { type: string, enum: [Success, Denied] }
+
+    AuditIntegrityResult:
+      type: object
+      properties:
+        checkedAtUtc: { type: string, format: date-time }
+        rangeFrom: { type: string, format: date-time }
+        rangeTo: { type: string, format: date-time }
+        status: { type: string, enum: [Intact, Broken] }
+        eventsVerified: { type: integer }
+        firstInconsistentSequenceNumber: { type: integer, nullable: true }
+
+    DailySecurityReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        detectionHits:
+          type: array
+          items:
+            type: object
+            properties:
+              rule: { type: string }
+              description: { type: string }
+        status: { type: string, enum: [Pending, Reviewed, Overdue] }
+        reviewedBy: { type: string, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        comment: { type: string, nullable: true }
+
+    PagedDailySecurityReviews:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/DailySecurityReview" }
+
+    ExportRequest:
+      type: object
+      properties:
+        filters: { type: object, additionalProperties: true }
+        format: { type: string, enum: [Csv, Excel, Pdf], default: Csv }
+
+    ExportJob:
+      type: object
+      properties:
+        jobId: { type: string, format: uuid }
+        status: { type: string, enum: [Queued, Processing, Completed, Failed] }
+        downloadUrl: { type: string, format: uri, nullable: true }
+
+    # ---------- Findings ----------
+    DiscoveryFinding:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        category: { $ref: "#/components/schemas/FindingCategory" }
+        objectId: { type: string, format: uuid, nullable: true }
+        detail: { type: string }
+        detectedAt: { type: string, format: date-time }
+        state: { $ref: "#/components/schemas/FindingState" }
+        acceptedRiskJustification: { type: string, nullable: true }
+        acceptedRiskReviewDate: { type: string, format: date, nullable: true }
+
+    PagedFindings:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/DiscoveryFinding" }
+
+    # ---------- Compliance ----------
+    ComplianceControl:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        formula: { type: string }
+        threshold: { type: number }
+        regulatoryReference: { type: string }
+
+    ControlResult:
+      type: object
+      properties:
+        controlId: { type: string }
+        date: { type: string, format: date }
+        value: { type: number }
+        compliant: { type: boolean }
+
+    CreateEvidencePackageRequest:
+      type: object
+      required: [controlId, from, to]
+      properties:
+        controlId: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+
+    EvidencePackage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        controlId: { type: string }
+        generatedBy: { type: string }
+        generatedAt: { type: string, format: date-time }
+        manifestSha256: { type: string }
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              fileName: { type: string }
+              sha256: { type: string }
+        downloadUrl: { type: string, format: uri, nullable: true }
+
+    # ---------- Dashboards ----------
+    OperationalDashboard:
+      type: object
+      properties:
+        totalObjects: { type: integer }
+        byType: { type: object, additionalProperties: { type: integer } }
+        byCriticality: { type: object, additionalProperties: { type: integer } }
+        expiringWithin30Days: { type: integer }
+        expiringWithin90Days: { type: integer }
+        expiringWithin180Days: { type: integer }
+        expiredCount: { type: integer }
+        openAlertsBySeverity: { type: object, additionalProperties: { type: integer } }
+        activeTemporaryAccessCount: { type: integer }
+        pendingRequestsCount: { type: integer }
+        orphanObjectsCount: { type: integer }
+        insecureConfigurationCount: { type: integer }
+        noUsageCount: { type: integer }
+
+    ExecutiveDashboard:
+      type: object
+      properties:
+        totalObjects: { type: integer }
+        byTypeAndCriticality: { type: object, additionalProperties: true }
+        percentWithValidOwners: { type: number }
+        percentExpired: { type: number }
+        criticalObjectsExpiringSoon: { type: integer }
+        approvedAccessCount: { type: integer }
+        rejectedAccessCount: { type: integer }
+        revokedAccessCount: { type: integer }
+        sodViolationsCount: { type: integer }
+        auditIntegrityStatus: { type: string, enum: [Intact, Broken] }
+        riskIndex: { type: number, minimum: 0, maximum: 100 }
+        riskIndexTrend:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string }
+              value: { type: number }
+        complianceByControl:
+          type: array
+          items: { $ref: "#/components/schemas/ControlResult" }
+
+    ReportResult:
+      type: object
+      properties:
+        reportKey: { type: string }
+        generatedAt: { type: string, format: date-time }
+        rows:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    # ---------- Paginación genérica ----------
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalItems: { type: integer }
+        totalPages: { type: integer }

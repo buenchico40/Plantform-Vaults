@@ -1,0 +1,6 @@
+@PlatformVault.Api_HostAddress = http://localhost:5009
+
+GET {{PlatformVault.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
