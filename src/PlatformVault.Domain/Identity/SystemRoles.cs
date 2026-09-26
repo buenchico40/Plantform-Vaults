@@ -8,14 +8,13 @@ public static class SystemRoles
     public const string Administrator = "Administrador";
     public const string Custodian = "Custodio";
     public const string Owner = "Propietario";
-    public const string Operator = "Operador";
     public const string Auditor = "Auditor";
     public const string Security = "Seguridad";
 
-    public static readonly IReadOnlyList<string> All = [Administrator, Custodian, Owner, Operator, Auditor, Security];
+    public static readonly IReadOnlyList<string> All = [Administrator, Custodian, Owner, Auditor, Security];
 
     /// <summary>Roles que se asignan a mano. Propietario se deriva de la propiedad (RN-037).</summary>
-    public static readonly IReadOnlyList<string> Assignable = [Administrator, Custodian, Operator, Auditor, Security];
+    public static readonly IReadOnlyList<string> Assignable = [Administrator, Custodian, Auditor, Security];
 
     /// <summary>Roles incompatibles con cualquier otro (matriz §4.3, RN-036).</summary>
     public static readonly IReadOnlyList<string> Exclusive = [Auditor, Security];

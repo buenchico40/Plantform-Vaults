@@ -110,11 +110,11 @@ $userDefs = @(
     @('auditor.luis', 'Luis Andrade', 'Auditor', 'TI'),
     @('custodio.maria', 'María Salazar', 'Custodio', 'TI'),
     @('custodio.pedro', 'Pedro Villacís', 'Custodio', 'CAN'),
-    @('operador.jose', 'José Cevallos', 'Operador', 'TI'),
-    @('operador.carla', 'Carla Benítez', 'Operador', 'TI'),
-    @('operador.diego', 'Diego Ortega', 'Operador', 'CAN'),
-    @('operador.sofia', 'Sofía Herrera', 'Operador', 'CAN'),
-    @('operador.tomas', 'Tomás Vera', 'Operador', 'TES')
+    @('operador.jose', 'José Cevallos', 'Custodio', 'TI'),
+    @('operador.carla', 'Carla Benítez', 'Custodio', 'TI'),
+    @('operador.diego', 'Diego Ortega', 'Custodio', 'CAN'),
+    @('operador.sofia', 'Sofía Herrera', 'Custodio', 'CAN'),
+    @('operador.tomas', 'Tomás Vera', 'Custodio', 'TES')
 )
 foreach ($u in $userDefs) {
     $idAndTemp = New-OrResetUser $u[0] @{ userName = $u[0]; displayName = $u[1]; email = "$($u[0])@banco-demo.local"; areaId = $areas[$u[3]]; roles = @($u[2]) }
@@ -352,7 +352,7 @@ if ($ObjectsPerArea -gt 0) {
 
     foreach ($area in @('TI', 'CAN', 'TES', 'INF', 'RIE', 'OPE', 'CUM')) {
         $custodian = New-DemoUser 'Custodio' $area
-        $operators = @(1..5 | ForEach-Object { New-DemoUser 'Operador' $area })
+        $operators = @(1..5 | ForEach-Object { New-DemoUser 'Custodio' $area })
         $areaGroups = @()
         foreach ($g in 1..2) {
             $members = @($operators | Sort-Object { $rnd.Next() } | Select-Object -First 3)

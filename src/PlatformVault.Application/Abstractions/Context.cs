@@ -37,10 +37,7 @@ public static class CurrentUserExtensions
     public static bool HasGlobalScope(this ICurrentUser user) => SystemRoles.GlobalScope.Any(user.IsInRole);
 
     /// <summary>Ámbito de visibilidad que aplica la función app.ufn_VisibleObjects (RN-010).</summary>
-    public static VisibilityScope Scope(this ICurrentUser user) => new(
-        user.UserId,
-        user.HasGlobalScope(),
-        user.IsInRole(SystemRoles.Custodian) ? user.AreaId : null);
+    public static VisibilityScope Scope(this ICurrentUser user) => new(user.UserId, user.HasGlobalScope());
 
     /// <summary>IMP-29: revelar, descargar y aprobar exigen contraseña reintroducida hace 15 minutos o menos.</summary>
     public static void EnsureRecentlyReauthenticated(this ICurrentUser user, DateTime nowUtc)
@@ -50,4 +47,4 @@ public static class CurrentUserExtensions
     }
 }
 
-public sealed record VisibilityScope(Guid ViewerUserId, bool HasGlobalScope, Guid? CustodianAreaId);
+public sealed record VisibilityScope(Guid ViewerUserId, bool HasGlobalScope);

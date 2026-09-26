@@ -105,7 +105,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         await Assert.ThrowsAsync<ConcurrencyFailure>(() =>
             objects.UpdateMetadataAsync(loaded, stale, owner, DateTime.UtcNow, "Viejo", "[]", false, CancellationToken.None));
 
-        var versions = await objects.ListVersionsAsync(obj.ObjectId, new VisibilityScope(owner, false, null), CancellationToken.None);
+        var versions = await objects.ListVersionsAsync(obj.ObjectId, new VisibilityScope(owner, false), CancellationToken.None);
         Assert.Equal([2, 1], versions.Select(v => v.Version));
     }
 
@@ -115,18 +115,20 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var (session, sp) = db.Open();
         await using var _ = session;
         var owner = await CreateUserAsync(sp, "own");
+        var creator = await CreateUserAsync(sp, "cre");
         var stranger = await CreateUserAsync(sp, "str");
         var objects = new ObjectRepository(sp);
         var name = "vis-" + Guid.NewGuid().ToString("N")[..8];
         var obj = NewSecret(owner, name);
-        await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        await objects.InsertAsync(obj, creator, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
 
         var criteria = new ObjectSearchCriteria { Text = name };
         var page = new PageRequest();
-        Assert.Equal(1, (await objects.SearchAsync(criteria, page, new VisibilityScope(owner, false, null), DateTime.UtcNow, CancellationToken.None)).TotalItems);
-        Assert.Equal(0, (await objects.SearchAsync(criteria, page, new VisibilityScope(stranger, false, null), DateTime.UtcNow, CancellationToken.None)).TotalItems);
-        Assert.Null(await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(stranger, false, null), DateTime.UtcNow, CancellationToken.None));
-        Assert.NotNull(await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(stranger, false, DefaultArea), DateTime.UtcNow, CancellationToken.None));
+        Assert.Equal(1, (await objects.SearchAsync(criteria, page, new VisibilityScope(owner, false), DateTime.UtcNow, CancellationToken.None)).TotalItems);
+        Assert.Equal(0, (await objects.SearchAsync(criteria, page, new VisibilityScope(stranger, false), DateTime.UtcNow, CancellationToken.None)).TotalItems);
+        Assert.Null(await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(stranger, false), DateTime.UtcNow, CancellationToken.None));
+        // IMP-61: quien registró el objeto lo ve aunque no sea propietario ni miembro de sus grupos.
+        Assert.NotNull(await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(creator, false), DateTime.UtcNow, CancellationToken.None));
     }
 
     [Fact]

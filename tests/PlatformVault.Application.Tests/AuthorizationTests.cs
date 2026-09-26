@@ -28,29 +28,40 @@ public sealed class ObjectAuthorizationTests
     private static readonly Guid FunctionalOwner = Guid.NewGuid();
     private static readonly Guid TechnicalOwner = Guid.NewGuid();
 
-    private static ObjectAuthorizationContext Context(bool viewerIsMember = false, bool groupActive = true) => new(
+    private static ObjectAuthorizationContext Context(bool viewerIsMember = false, bool groupActive = true, Guid? createdBy = null) => new(
         Guid.NewGuid(), "OBJ-000001", ObjectType.Secret, Criticality.Medium, Sensitivity.Confidential, LifecycleState.Active,
-        CustodyMode.Internal, true, Area, FunctionalOwner, TechnicalOwner, 1,
+        CustodyMode.Internal, true, Area, FunctionalOwner, TechnicalOwner, createdBy ?? Guid.NewGuid(), 1,
         [new ObjectGroupInfo(Guid.NewGuid(), "GRP-000001", "Pagos", groupActive, 2, viewerIsMember)], []);
 
     [Fact]
-    public void Operator_outside_groups_cannot_see_the_object_IDOR()
+    public void Custodian_of_the_same_area_outside_groups_cannot_see_the_object_IMP61()
     {
-        var user = new FakeUser(Guid.NewGuid(), Area, SystemRoles.Operator);
+        var user = new FakeUser(Guid.NewGuid(), Area, SystemRoles.Custodian);
         Assert.False(ObjectAuthorizer.IsVisible(Context(), user));
     }
 
     [Fact]
-    public void Custodian_sees_objects_of_own_area_only()
+    public void Custodian_sees_objects_of_own_groups_IMP61()
     {
-        Assert.True(ObjectAuthorizer.IsVisible(Context(), new FakeUser(Guid.NewGuid(), Area, SystemRoles.Custodian)));
-        Assert.False(ObjectAuthorizer.IsVisible(Context(), new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Custodian)));
+        var user = new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Custodian);
+        Assert.True(ObjectAuthorizer.IsVisible(Context(viewerIsMember: true), user));
+    }
+
+    [Fact]
+    public void Custodian_sees_and_manages_objects_they_registered_IMP61()
+    {
+        var creator = Guid.NewGuid();
+        var user = new FakeUser(creator, Area, SystemRoles.Custodian);
+        var context = Context(createdBy: creator);
+        Assert.True(ObjectAuthorizer.IsVisible(context, user));
+        Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ManageOwners));
+        Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ManageGroups));
     }
 
     [Fact]
     public void Inactive_group_does_not_grant_visibility_RN035()
     {
-        var user = new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Operator);
+        var user = new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Custodian);
         Assert.True(ObjectAuthorizer.IsVisible(Context(viewerIsMember: true), user));
         Assert.False(ObjectAuthorizer.IsVisible(Context(viewerIsMember: true, groupActive: false), user));
     }
@@ -87,14 +98,14 @@ public sealed class ObjectAuthorizationTests
     }
 
     [Fact]
-    public void Operator_member_may_renew_value_and_request_but_not_change_state()
+    public void Custodian_member_has_full_custodian_permissions_IMP61()
     {
-        var user = new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Operator);
+        var user = new FakeUser(Guid.NewGuid(), OtherArea, SystemRoles.Custodian);
         var context = Context(viewerIsMember: true);
         Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.EditValue));
         Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.RequestAccess));
-        Assert.False(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ChangeState));
-        Assert.False(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ManageOwners));
+        Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ChangeState));
+        Assert.True(ObjectAuthorizer.IsAllowed(context, user, ObjectOperation.ManageOwners));
     }
 
     [Fact]
@@ -107,10 +118,9 @@ public sealed class ObjectAuthorizationTests
     }
 
     [Fact]
-    public void Scope_passes_custodian_area_to_the_database_filter()
+    public void Scope_is_global_only_for_global_roles()
     {
-        Assert.Equal(Area, new FakeUser(Guid.NewGuid(), Area, SystemRoles.Custodian).Scope().CustodianAreaId);
-        Assert.Null(new FakeUser(Guid.NewGuid(), Area, SystemRoles.Operator).Scope().CustodianAreaId);
+        Assert.False(new FakeUser(Guid.NewGuid(), Area, SystemRoles.Custodian).Scope().HasGlobalScope);
         Assert.True(new FakeUser(Guid.NewGuid(), Area, SystemRoles.Auditor).Scope().HasGlobalScope);
     }
 }
@@ -137,10 +147,9 @@ public sealed class FunctionalPermissionTests
     }
 
     [Fact]
-    public void Custodian_and_operator_register_objects_IMP46()
+    public void Custodian_registers_objects_IMP61()
     {
         Assert.Contains(Permission.CreateObject, Permissions.For([SystemRoles.Custodian]));
-        Assert.Contains(Permission.CreateObject, Permissions.For([SystemRoles.Operator]));
         Assert.DoesNotContain(Permission.CreateObject, Permissions.For([SystemRoles.Auditor]));
         Assert.DoesNotContain(Permission.CreateObject, Permissions.For([SystemRoles.Security]));
     }

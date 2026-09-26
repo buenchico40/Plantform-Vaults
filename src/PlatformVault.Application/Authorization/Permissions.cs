@@ -26,10 +26,9 @@ public static class Permissions
     {
         [SystemRoles.Administrator] = [Permission.ViewInventory, Permission.ManageGroups, Permission.ManageUsers, Permission.ManageAreas,
             Permission.ViewJobs, Permission.ViewAlerts],
+        // IMP-61: el Custodio absorbe al antiguo Operador; ve solo sus objetos, los de sus grupos y los que registra.
         [SystemRoles.Custodian] = [Permission.ViewInventory, Permission.CreateObject, Permission.ViewAudit, Permission.ViewAlerts,
             Permission.RequestAccess],
-        // IMP-46 (aprobada 2026-09-25): el Operador también registra objetos en su área.
-        [SystemRoles.Operator] = [Permission.ViewInventory, Permission.CreateObject, Permission.ViewAlerts, Permission.RequestAccess],
         [SystemRoles.Auditor] = [Permission.ViewInventory, Permission.ViewAudit, Permission.VerifyAuditChain, Permission.ViewAlerts],
         [SystemRoles.Security] = [Permission.ViewInventory, Permission.ManageExpirationPolicies, Permission.ViewAudit,
             Permission.VerifyAuditChain, Permission.ViewAlerts, Permission.ApproveCriticalAccess],

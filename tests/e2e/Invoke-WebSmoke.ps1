@@ -49,7 +49,7 @@ Check 'el custodio ve la auditoría (rol con permiso)' ($audit.Status -eq 200)
 $users = Req $s GET '/Users'
 Check 'el custodio no administra usuarios (mensaje de permiso)' ($users.Content -notmatch 'Crear usuario')
 
-# Operador: revelado del objeto crítico con acceso aprobado (vía Web, con re-autenticación)
+# Custodio (antes Operador, IMP-61): revelado del objeto crítico con acceso aprobado (vía Web, con re-autenticación)
 $o, $oh = Login 'operador1'
 $ol = Req $o GET '/Objects?Text=swift'
 $id = ([regex]'"(?:[Ii]d)":"([0-9a-f-]{36})"').Match($ol.Content).Groups[1].Value

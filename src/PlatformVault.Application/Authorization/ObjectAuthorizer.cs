@@ -46,10 +46,13 @@ public sealed class ObjectAuthorizer(IObjectRepository objects, ICurrentUser use
     public static bool IsVisible(ObjectAuthorizationContext context, ICurrentUser user) =>
         user.HasGlobalScope() || HasScopedAccess(context, user);
 
-    /// <summary>Acceso por ámbito no global: propiedad, área del custodio o grupo activo (RN-010).</summary>
+    /// <summary>
+    /// Acceso por ámbito no global (RN-010, IMP-61): propiedad, objeto registrado por el usuario o grupo activo del que es miembro.
+    /// No hay visibilidad por área.
+    /// </summary>
     public static bool HasScopedAccess(ObjectAuthorizationContext context, ICurrentUser user) =>
         context.IsOwner(user.UserId)
-        || (user.IsInRole(SystemRoles.Custodian) && user.AreaId == context.AreaId)
+        || context.IsCreator(user.UserId)
         || context.IsGroupMember;
 
     public static bool IsAllowed(ObjectAuthorizationContext context, ICurrentUser user, ObjectOperation operation)
@@ -57,20 +60,19 @@ public sealed class ObjectAuthorizer(IObjectRepository objects, ICurrentUser use
         var scoped = HasScopedAccess(context, user);
         var owner = context.IsOwner(user.UserId);
         var custodian = user.IsInRole(SystemRoles.Custodian) && scoped;
-        var operatorMember = user.IsInRole(SystemRoles.Operator) && context.IsGroupMember;
 
         return operation switch
         {
             ObjectOperation.View => IsVisible(context, user),
             ObjectOperation.EditMetadata => custodian || owner,
             ObjectOperation.Reclassify => custodian || owner || user.IsInRole(SystemRoles.Security),
-            ObjectOperation.EditValue => custodian || context.TechnicalOwnerId == user.UserId || operatorMember,
+            ObjectOperation.EditValue => custodian || context.TechnicalOwnerId == user.UserId,
             ObjectOperation.ChangeState => custodian || owner,
             ObjectOperation.ManageOwners => custodian,
             ObjectOperation.ManageGroups => custodian || owner,
-            // Matriz §4.2: revelan/descargan Custodio, Propietario y Operador mediante Temporary Access.
+            // Matriz §4.2: revelan/descargan Custodio y Propietario mediante Temporary Access.
             // Auditor y Seguridad no pueden ser miembros ni propietarios, por lo que no tienen acceso por ámbito.
-            ObjectOperation.RequestAccess => scoped && (owner || user.IsInRole(SystemRoles.Custodian) || user.IsInRole(SystemRoles.Operator)),
+            ObjectOperation.RequestAccess => scoped && (owner || user.IsInRole(SystemRoles.Custodian)),
             ObjectOperation.ViewAudit => user.IsInRole(SystemRoles.Auditor) || user.IsInRole(SystemRoles.Security) || custodian || owner,
             _ => false,
         };

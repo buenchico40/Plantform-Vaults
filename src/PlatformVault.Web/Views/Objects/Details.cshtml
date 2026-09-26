@@ -6,9 +6,9 @@
     var isOwner = o.FunctionalOwnerId == me || o.TechnicalOwnerId == me;
     var custodian = User.IsInRole("Custodio");
     var canEdit = custodian || isOwner;
-    var canValue = custodian || o.TechnicalOwnerId == me || User.IsInRole("Operador");
+    var canValue = custodian || o.TechnicalOwnerId == me;
     var canClassify = canEdit || User.IsInRole("Seguridad");
-    var canRequest = (isOwner || custodian || User.IsInRole("Operador")) && o.HasValue && o.LifecycleState == "Activo";
+    var canRequest = (isOwner || custodian) && o.HasValue && o.LifecycleState == "Activo";
     var subtype = Model.Subtypes.FirstOrDefault(s => s.Type == o.Type && s.Code == o.Subtype);
     var action = o.Type switch { "Certificate" => "DownloadPrivateKey", "CryptographicKey" => "DownloadKeyMaterial", _ => "Reveal" };
     var now = DateTime.UtcNow;

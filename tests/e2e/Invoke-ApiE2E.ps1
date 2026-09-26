@@ -59,9 +59,9 @@ function NewUser($name, $roles) {
     [pscustomobject]@{ Id = $r.Body.userId; Token = (Activate $name $r.Body.temporaryPassword) }
 }
 $cust = NewUser 'custodio1' @('Custodio')
-$op = NewUser 'operador1' @('Operador')
+$op = NewUser 'operador1' @('Custodio')
 $sec = NewUser 'seguridad1' @('Seguridad')
-$other = NewUser 'operador2' @('Operador')
+$other = NewUser 'operador2' @('Custodio')
 $sod = Call POST '/users' @{ userName = 'mixto1'; displayName = 'Mixto'; roles = @('Seguridad', 'Custodio') } $admin
 Check 'SoD: Seguridad + Custodio rechazado (422)' ($sod.Status -eq 422)
 $selfRole = Call POST "/users/$((Call GET '/me/effective-permissions' $null $admin).Body.user.id)/roles" @{ role = 'Custodio' } $admin

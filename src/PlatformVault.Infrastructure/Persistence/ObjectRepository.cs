@@ -25,12 +25,12 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
                     ? null
                     : new ObjectAuthorizationContext(row.ObjectId, row.Code, Enum<ObjectType>(row.ObjectType), Enum<Criticality>(row.Criticality),
                         Enum<Sensitivity>(row.Sensitivity), Enum<LifecycleState>(row.LifecycleState), Enum<CustodyMode>(row.CustodyMode),
-                        row.HasPayload, row.AreaId, row.FunctionalOwnerId, row.TechnicalOwnerId, row.CurrentVersion, groups, accesses);
+                        row.HasPayload, row.AreaId, row.FunctionalOwnerId, row.TechnicalOwnerId, row.CreatedBy, row.CurrentVersion, groups, accesses);
             }, ct);
 
     public async Task<ManagedObject?> LoadAsync(Guid objectId, CancellationToken ct)
     {
-        var row = await sp.QueryMultipleAsync("app.usp_ManagedObject_GetById", GetByIdParameters(objectId, Guid.Empty, true, null, DateTime.UtcNow),
+        var row = await sp.QueryMultipleAsync("app.usp_ManagedObject_GetById", GetByIdParameters(objectId, Guid.Empty, true, DateTime.UtcNow),
             grid => grid.ReadFirstOrDefaultAsync<ObjectRow>(), ct);
         if (row is null) return null;
         return new ManagedObject
@@ -61,7 +61,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
 
     public Task<ObjectDetail?> GetDetailAsync(Guid objectId, VisibilityScope scope, DateTime nowUtc, CancellationToken ct) =>
         sp.QueryMultipleAsync("app.usp_ManagedObject_GetById",
-            GetByIdParameters(objectId, scope.ViewerUserId, scope.HasGlobalScope, scope.CustodianAreaId, nowUtc),
+            GetByIdParameters(objectId, scope.ViewerUserId, scope.HasGlobalScope, nowUtc),
             async grid =>
             {
                 var row = await grid.ReadFirstOrDefaultAsync<ObjectRow>();
@@ -109,7 +109,6 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         {
             scope.ViewerUserId,
             scope.HasGlobalScope,
-            scope.CustodianAreaId,
             NowUtc = nowUtc,
             ExpiringSoonDays,
             criteria.Text,
@@ -277,7 +276,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
     public async Task<IReadOnlyList<ObjectVersionEntry>> ListVersionsAsync(Guid objectId, VisibilityScope scope, CancellationToken ct)
     {
         var rows = await sp.QueryAsync<VersionRow>("app.usp_ObjectVersion_ListByObject",
-            new { ObjectId = objectId, scope.ViewerUserId, scope.HasGlobalScope, scope.CustodianAreaId }, ct);
+            new { ObjectId = objectId, scope.ViewerUserId, scope.HasGlobalScope }, ct);
         return rows.Select(r => new ObjectVersionEntry(r.VersionNumber, r.ChangedBy, r.ChangedByName, Utc(r.ChangedAtUtc), r.Reason,
             ParseFields(r.ChangedFieldsJson))).ToList();
     }
@@ -285,7 +284,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
     public async Task<IReadOnlyList<OwnershipChange>> ListOwnershipHistoryAsync(Guid objectId, VisibilityScope scope, CancellationToken ct)
     {
         var rows = await sp.QueryAsync<OwnershipRow>("app.usp_OwnershipHistory_ListByObject",
-            new { ObjectId = objectId, scope.ViewerUserId, scope.HasGlobalScope, scope.CustodianAreaId }, ct);
+            new { ObjectId = objectId, scope.ViewerUserId, scope.HasGlobalScope }, ct);
         return rows.Select(r => new OwnershipChange(Enum<OwnerRole>(r.OwnerRole), r.PreviousUserId, r.PreviousUserName, r.NewUserId,
             r.NewUserName, r.ChangedBy, r.ChangedByName, Utc(r.ChangedAtUtc), r.Reason)).ToList();
     }
@@ -296,12 +295,11 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         return new ObjectWriteResult(ETag.From(row.RowVer), row.CurrentVersion);
     }
 
-    private static object GetByIdParameters(Guid objectId, Guid viewer, bool global, Guid? area, DateTime now) => new
+    private static object GetByIdParameters(Guid objectId, Guid viewer, bool global, DateTime now) => new
     {
         ObjectId = objectId,
         ViewerUserId = viewer,
         HasGlobalScope = global,
-        CustodianAreaId = area,
         NowUtc = now,
         ExpiringSoonDays,
     };
@@ -361,6 +359,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         public Guid AreaId { get; set; }
         public Guid? FunctionalOwnerId { get; set; }
         public Guid? TechnicalOwnerId { get; set; }
+        public Guid CreatedBy { get; set; }
         public int CurrentVersion { get; set; }
     }
 

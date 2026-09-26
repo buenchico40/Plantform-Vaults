@@ -2,7 +2,7 @@
 SET NOCOUNT ON;
 GO
 CREATE OR ALTER PROCEDURE app.usp_ManagedObject_GetById
-    @ObjectId uniqueidentifier, @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @CustodianAreaId uniqueidentifier = NULL, @NowUtc datetime2(3), @ExpiringSoonDays int = 30
+    @ObjectId uniqueidentifier, @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @NowUtc datetime2(3), @ExpiringSoonDays int = 30
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -16,7 +16,7 @@ BEGIN
                 WHEN o.ExpirationDate <= DATEADD(DAY, @ExpiringSoonDays, @NowUtc) THEN 'ExpiringSoon'
                 ELSE 'Valid' END AS ExpirationStatus
     FROM app.ManagedObject AS o
-    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope, @CustodianAreaId) AS v ON v.ObjectId = o.ObjectId
+    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId
     JOIN app.Area AS a ON a.AreaId = o.AreaId
     LEFT JOIN [identity].[User] AS fo ON fo.UserId = o.FunctionalOwnerId
     LEFT JOIN [identity].[User] AS tec ON tec.UserId = o.TechnicalOwnerId
@@ -25,7 +25,7 @@ BEGIN
     SELECT g.GroupId, g.Code, g.Name, g.IsActive
     FROM app.ObjectGroup AS og
     JOIN app.SecurityGroup AS g ON g.GroupId = og.GroupId
-    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope, @CustodianAreaId) AS v ON v.ObjectId = og.ObjectId
+    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = og.ObjectId
     WHERE og.ObjectId = @ObjectId
     ORDER BY g.Name;
 END

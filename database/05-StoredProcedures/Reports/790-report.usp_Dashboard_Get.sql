@@ -2,7 +2,7 @@
 SET NOCOUNT ON;
 GO
 CREATE OR ALTER PROCEDURE report.usp_Dashboard_Get
-    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @CustodianAreaId uniqueidentifier = NULL, @NowUtc datetime2(3), @ExpiringSoonDays int = 30
+    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @NowUtc datetime2(3), @ExpiringSoonDays int = 30
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -16,7 +16,7 @@ BEGIN
                 ELSE 'Valid' END,
            CASE WHEN o.FunctionalOwnerId IS NULL OR o.TechnicalOwnerId IS NULL THEN 1 ELSE 0 END
     FROM app.ManagedObject AS o
-    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope, @CustodianAreaId) AS v ON v.ObjectId = o.ObjectId;
+    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId;
 
     SELECT COUNT(*) AS Total,
            SUM(CASE WHEN LifecycleState = 'Active' THEN 1 ELSE 0 END) AS Active,

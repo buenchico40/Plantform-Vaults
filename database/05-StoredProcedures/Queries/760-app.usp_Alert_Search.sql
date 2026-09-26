@@ -2,7 +2,7 @@
 SET NOCOUNT ON;
 GO
 CREATE OR ALTER PROCEDURE app.usp_Alert_Search
-    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @CustodianAreaId uniqueidentifier = NULL, @State varchar(15) = NULL, @Severity varchar(10) = NULL, @OnlyOpen bit = 1, @Offset int = 0, @PageSize int = 50,
+    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @State varchar(15) = NULL, @Severity varchar(10) = NULL, @OnlyOpen bit = 1, @Offset int = 0, @PageSize int = 50,
     @ObjectId uniqueidentifier = NULL
 AS
 BEGIN
@@ -13,7 +13,7 @@ BEGIN
            COUNT(*) OVER () AS TotalCount
     FROM app.Alert AS al
     JOIN app.ManagedObject AS o ON o.ObjectId = al.ObjectId
-    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope, @CustodianAreaId) AS v ON v.ObjectId = al.ObjectId
+    JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = al.ObjectId
     WHERE (@State IS NULL OR al.State = @State)
       AND (@Severity IS NULL OR al.Severity = @Severity)
       AND (@OnlyOpen = 0 OR al.State <> 'Resolved')

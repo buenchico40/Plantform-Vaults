@@ -16,11 +16,14 @@ public sealed record ObjectAuthorizationContext(
     Guid AreaId,
     Guid? FunctionalOwnerId,
     Guid? TechnicalOwnerId,
+    Guid CreatedBy,
     int CurrentVersion,
     IReadOnlyList<ObjectGroupInfo> Groups,
     IReadOnlyList<ActiveAccessInfo> ActiveAccesses)
 {
     public bool IsOwner(Guid userId) => FunctionalOwnerId == userId || TechnicalOwnerId == userId;
+
+    public bool IsCreator(Guid userId) => CreatedBy == userId;
 
     public bool IsGroupMember => Groups.Any(g => g.IsActive && g.ViewerIsMember);
 

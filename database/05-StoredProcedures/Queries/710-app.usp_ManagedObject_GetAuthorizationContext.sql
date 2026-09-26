@@ -8,7 +8,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT o.ObjectId, o.Code, o.ObjectType, o.Criticality, o.Sensitivity, o.LifecycleState, o.CustodyMode, o.HasPayload,
-           o.AreaId, o.FunctionalOwnerId, o.TechnicalOwnerId, o.CurrentVersion, o.RowVer
+           o.AreaId, o.FunctionalOwnerId, o.TechnicalOwnerId, o.CreatedBy, o.CurrentVersion, o.RowVer
     FROM app.ManagedObject AS o WHERE o.ObjectId = @ObjectId;
 
     SELECT g.GroupId, g.Code, g.Name, g.IsActive,

@@ -6,10 +6,6 @@
 }
 <h1>Registrar objeto</h1>
 <p class="pv-muted">El objeto se crea en estado Borrador. Para activarlo necesita propietarios, expiración (o la marca «Sin vencimiento») y, si es Crítico o Restringido, un grupo con dos o más miembros activos.</p>
-@if (!User.IsInRole("Custodio"))
-{
-    <p class="pv-msg pv-err">Como Operador, debe figurar como propietario funcional o técnico del objeto que registra; de lo contrario dejaría de verlo.</p>
-}
 <form class="pv-card" asp-action="Create" method="post" enctype="multipart/form-data" autocomplete="off">
     <div asp-validation-summary="All" class="pv-err"></div>
     <div class="pv-form">

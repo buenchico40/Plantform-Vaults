@@ -2502,7 +2502,7 @@ components:
       enum: [Funcional, Técnico]
     RoleName:
       type: string
-      enum: [Administrador, Custodio, Propietario, Operador, Auditor, Seguridad]
+      enum: [Administrador, Custodio, Propietario, Auditor, Seguridad]
     Scope:
       type: object
       properties:

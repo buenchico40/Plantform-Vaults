@@ -3,7 +3,7 @@ SET NOCOUNT ON;
 GO
 -- Orden por lista blanca (CASE), sin SQL dinámico.
 CREATE OR ALTER PROCEDURE app.usp_ManagedObject_Search
-    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @CustodianAreaId uniqueidentifier = NULL, @NowUtc datetime2(3), @ExpiringSoonDays int = 30,
+    @ViewerUserId uniqueidentifier, @HasGlobalScope bit, @NowUtc datetime2(3), @ExpiringSoonDays int = 30,
     @Text nvarchar(200) = NULL, @ObjectType varchar(20) = NULL, @Criticality varchar(10) = NULL, @Sensitivity varchar(15) = NULL,
     @Environment varchar(20) = NULL, @LifecycleState varchar(15) = NULL, @AreaId uniqueidentifier = NULL,
     @OwnerId uniqueidentifier = NULL, @ExpirationStatus varchar(15) = NULL, @WithoutOwner bit = 0,
@@ -26,7 +26,7 @@ BEGIN
                 WHEN o.ExpirationDate <= DATEADD(DAY, @ExpiringSoonDays, @NowUtc) THEN 'ExpiringSoon'
                 ELSE 'Valid' END AS ExpirationStatus
         FROM app.ManagedObject AS o
-        JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope, @CustodianAreaId) AS v ON v.ObjectId = o.ObjectId
+        JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId
         JOIN app.Area AS a ON a.AreaId = o.AreaId
     LEFT JOIN [identity].[User] AS fo ON fo.UserId = o.FunctionalOwnerId
     LEFT JOIN [identity].[User] AS tec ON tec.UserId = o.TechnicalOwnerId

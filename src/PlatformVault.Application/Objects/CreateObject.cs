@@ -44,13 +44,10 @@ public sealed class CreateObjectHandler(
     public async Task<ObjectCreated> HandleAsync(CreateObjectCommand command, CancellationToken ct)
     {
         user.Require(Permission.CreateObject);
-        // Nota ² de la matriz §4.2 e IMP-46: Custodio u Operador registran objetos solo en su área.
+        // Nota ² de la matriz §4.2: el Custodio registra objetos solo en su área.
+        // IMP-61: quien registra el objeto lo sigue viendo (app.ufn_VisibleObjects), sin necesidad de ser propietario.
         if (user.AreaId != command.AreaId)
             throw new ForbiddenFailure("Solo puede registrar objetos en su área.");
-        // El Operador no tiene visibilidad por área (RN-010): debe quedar como propietario para seguir viendo el objeto.
-        if (!user.IsInRole(SystemRoles.Custodian) && command.FunctionalOwnerId != user.UserId && command.TechnicalOwnerId != user.UserId)
-            throw new DomainException(DomainErrors.OwnersRequired,
-                "Como Operador, debe figurar como propietario funcional o técnico del objeto que registra.");
 
         await owners.ValidateAsync(command.FunctionalOwnerId, command.TechnicalOwnerId, ct);
 

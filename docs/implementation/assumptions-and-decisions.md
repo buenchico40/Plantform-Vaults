@@ -197,6 +197,7 @@ Estas decisiones surgieron al construir la iteración 1A. Las que afectaban al c
 | IMP-59 | Parámetros de los listados alineados con el contrato: `q` (en lugar de `text`), `status`, `role`, `subtype`, `groupId`, `expiresFrom`/`expiresTo`, `orphanOwner`, `objectId` (alertas) y `correlationId` (auditoría). Los filtros aún no disponibles (`applicationId`, `insecureConfiguration`, `noUsage`, `splitKey`, `includeDeleted`, `isPersonal`) responden 400. Las modificaciones de objetos devuelven `ObjectWriteResult` y las reglas de negocio responden 422 con `code`. |
 
 | IMP-60 | **Defecto corregido en la verificación final:** el límite de intentos de `/auth/*` se aplicaba por IP de origen y, como todas las peticiones llegan desde el servidor Web, 20 inicios de sesión por minuto de cualquier usuario bloqueaban a todos. Ahora la Web envía la IP del navegador en `X-Client-Ip`; la API solo la acepta tras validar la API Key y la red, y la usa para el límite por usuario final y para la auditoría (antes registraba la IP del servidor Web). Límite configurable `Security:LoginAttemptsPerMinutePerClient` (20 por defecto). |
+| IMP-61 | **Unificación de roles (2026-09-26):** el rol Operador se elimina y sus usuarios pasan a Custodio (migración idempotente en `07-SeedData/700-Roles.sql`). El Custodio ya no ve por área: ve los objetos de los que es propietario, los que registró (`ManagedObject.CreatedBy`) y los asignados a un grupo activo del que es miembro (`app.ufn_VisibleObjects`, `ObjectAuthorizer.HasScopedAccess`). Sobre esos objetos conserva todos los permisos del Custodio. Sigue registrando objetos solo en su área y ya no necesita figurar como propietario. El nivel N3 de escalamiento avisa al jefe del propietario funcional y a los Responsables de los grupos del objeto (antes, custodios del área). Sustituye a IMP-46. |
 
 ### 7.4 Revisión con el usuario (2026-09-25)
 
@@ -206,3 +207,4 @@ Estas decisiones surgieron al construir la iteración 1A. Las que afectaban al c
 | IMP-42 | Se alinea con el contrato (`?part=`) y se añade la descarga del certificado público. |
 | IMP-46 | Cambio: el Operador también registra objetos en su área (con IMP-58). |
 | IMP-47, IMP-48, IMP-49/50 | Aprobadas sin cambios. |
+| IMP-61 | Cambio: Custodio y Operador se unifican en Custodio con visibilidad por grupo y por objetos registrados (sustituye a IMP-46). |

@@ -185,7 +185,7 @@ public sealed class SegregationOfDutiesTests
     [InlineData(SystemRoles.Security)]
     public void Exclusive_roles_cannot_be_combined_RN036(string exclusive)
     {
-        var ex = Assert.Throws<DomainException>(() => SegregationOfDuties.ValidateRoleSet(Admin, Target, [exclusive, SystemRoles.Operator]));
+        var ex = Assert.Throws<DomainException>(() => SegregationOfDuties.ValidateRoleSet(Admin, Target, [exclusive, SystemRoles.Custodian]));
         Assert.Equal(DomainErrors.RoleConflict, ex.Code);
     }
 
@@ -201,7 +201,7 @@ public sealed class SegregationOfDutiesTests
     public void Auditor_and_security_cannot_be_group_members_RN103()
     {
         Assert.Throws<DomainException>(() => SegregationOfDuties.EnsureCanBeGroupMember([SystemRoles.Security], true));
-        Assert.Throws<DomainException>(() => SegregationOfDuties.EnsureCanBeGroupMember([SystemRoles.Operator], false));
+        Assert.Throws<DomainException>(() => SegregationOfDuties.EnsureCanBeGroupMember([SystemRoles.Custodian], false));
         SegregationOfDuties.EnsureCanBeGroupMember([SystemRoles.Administrator], true);
     }
 

@@ -20,7 +20,6 @@ public sealed class AlertRepository(StoredProcedures sp) : IAlertRepository
         {
             scope.ViewerUserId,
             scope.HasGlobalScope,
-            scope.CustodianAreaId,
             State = criteria.State?.ToString(),
             Severity = criteria.Severity?.ToString(),
             criteria.OnlyOpen,
@@ -298,7 +297,6 @@ public sealed class DashboardReader(StoredProcedures sp) : IDashboardReader
         {
             scope.ViewerUserId,
             scope.HasGlobalScope,
-            scope.CustodianAreaId,
             NowUtc = nowUtc,
             ExpiringSoonDays = ManagedObject.ExpiringSoonDaysDefault,
         }, async grid =>
