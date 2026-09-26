@@ -1,0 +1,42 @@
+@model AccessRequestView
+@{
+    ViewData["Title"] = Model.Code;
+    var mine = Model.RequesterId == User.Id();
+}
+<h1>Solicitud @Model.Code</h1>
+<div class="pv-card">
+    <dl class="pv-dl">
+        <dt>Objeto</dt><dd><a asp-controller="Objects" asp-action="Details" asp-route-id="@Model.ObjectId">@Model.ObjectCode · @Model.ObjectName</a> (@Model.Criticality, @Model.Sensitivity)</dd>
+        <dt>Solicitante</dt><dd>@Model.RequesterName</dd>
+        <dt>Acción</dt><dd>@Display.Type(Model.Action)</dd>
+        <dt>Justificación</dt><dd>@Model.Justification</dd>
+        <dt>Inicio solicitado</dt><dd>@Display.Date(Model.RequestedStartAt)</dd>
+        <dt>Duración</dt><dd>@Model.RequestedDurationMinutes minutos</dd>
+        <dt>Aprobador</dt><dd>@Display.Type(Model.ApproverKind)</dd>
+        <dt>Estado</dt><dd>@Model.State</dd>
+        <dt>Vence si no se resuelve</dt><dd>@Display.Date(Model.PendingExpiresAt)</dd>
+    </dl>
+</div>
+@foreach (var d in Model.Decisions)
+{
+    <div class="pv-card">@d.Decision por @d.ApproverName el @Display.Date(d.DecidedAt). @d.Comment</div>
+}
+@if (Model.State == "Pendiente" && !mine)
+{
+    <form class="pv-card pv-form" asp-action="Decide" asp-route-id="@Model.Id" method="post" autocomplete="off">
+        <h3 class="pv-wide">Decisión</h3>
+        <label>
+            Decisión
+            <select name="Decision"><option value="Approved">Aprobar</option><option value="Rejected">Rechazar</option></select>
+        </label>
+        <label>Confirme su contraseña <input type="password" name="Password" autocomplete="current-password" required maxlength="256" /></label>
+        <label class="pv-wide">Comentario (obligatorio al rechazar) <textarea name="Comment" maxlength="1000"></textarea></label>
+        <div class="pv-actions"><button type="submit">Registrar decisión</button></div>
+    </form>
+}
+@if (Model.State == "Pendiente" && mine)
+{
+    <form asp-action="Cancel" asp-route-id="@Model.Id" method="post" data-confirm="¿Cancelar la solicitud?">
+        <button type="submit" class="pv-secondary">Cancelar solicitud</button>
+    </form>
+}

@@ -1,0 +1,34 @@
+@model Paged<AuditEventView>
+@{ ViewData["Title"] = "Auditoría"; }
+<div class="pv-actions">
+    <h1>Bitácora de auditoría</h1>
+    <form asp-action="Verify" method="post"><button type="submit" class="pv-secondary">Verificar integridad de la cadena</button></form>
+</div>
+<p class="pv-muted">Registro de solo inserción con hash SHA-256 encadenado (RN-075, RN-076). Nunca contiene valores sensibles.</p>
+<form class="pv-card pv-form" method="get" asp-action="Index">
+    <label>Acción <input name="action" value="@ViewBag.Action" placeholder="Object.ValueRevealed" /></label>
+    <label>Recurso <input name="resourceId" value="@ViewBag.ResourceId" placeholder="Identificador" /></label>
+    <label>Desde <input type="datetime-local" name="from" /></label>
+    <label>Hasta <input type="datetime-local" name="to" /></label>
+    <div class="pv-actions"><button type="submit">Filtrar</button></div>
+</form>
+@(Html.DevExtreme().DataGrid<AuditEventView>()
+    .ID("auditGrid")
+    .DataSource(Model.Items, "Id")
+    .ShowBorders(true)
+    .ColumnAutoWidth(true)
+    .WordWrapEnabled(true)
+    .Paging(p => p.PageSize(50))
+    .Columns(c =>
+    {
+        c.AddFor(m => m.Sequence).Caption("#");
+        c.AddFor(m => m.Timestamp).Caption("Fecha (UTC)").DataType(GridColumnDataType.DateTime);
+        c.AddFor(m => m.ActorName).Caption("Actor");
+        c.AddFor(m => m.Action).Caption("Acción");
+        c.AddFor(m => m.ResourceType).Caption("Recurso");
+        c.AddFor(m => m.ResourceId).Caption("Id");
+        c.AddFor(m => m.Result).Caption("Resultado");
+        c.AddFor(m => m.SourceIp).Caption("IP");
+        c.AddFor(m => m.Details).Caption("Detalle");
+    }))
+<p class="pv-muted">@Model.TotalItems eventos en total.</p>

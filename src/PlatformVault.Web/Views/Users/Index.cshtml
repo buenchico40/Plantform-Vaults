@@ -1,0 +1,73 @@
+@model Paged<UserView>
+@{
+    ViewData["Title"] = "Usuarios";
+    var areas = (List<AreaView>)ViewBag.Areas;
+    string[] roles = ["Administrador", "Custodio", "Operador", "Auditor", "Seguridad"];
+}
+<h1>Usuarios</h1>
+<p class="pv-muted">Fase 1: usuarios locales con usuario y contraseña. Auditor y Seguridad son exclusivos (RN-036). Nadie se asigna roles a sí mismo (RN-038).</p>
+<form class="pv-actions" method="get" asp-action="Index">
+    <input name="text" value="@ViewBag.Text" placeholder="Buscar usuario" maxlength="100" />
+    <button type="submit" class="pv-secondary">Buscar</button>
+</form>
+<details class="pv-section">
+    <summary>Crear usuario</summary>
+    <form asp-action="Create" method="post" class="pv-form">
+        <label>Usuario <input name="userName" maxlength="100" required /></label>
+        <label>Nombre visible <input name="displayName" maxlength="200" required /></label>
+        <label>Correo <input type="email" name="email" maxlength="256" /></label>
+        <label>
+            Área
+            <select name="areaId"><option value="">—</option>@foreach (var a in areas) { <option value="@a.Id">@a.Name</option> }</select>
+        </label>
+        <div class="pv-wide pv-actions">
+            @foreach (var r in roles) { <label class="pv-check"><input type="checkbox" name="roles" value="@r" /> @r</label> }
+        </div>
+        <div class="pv-actions"><button type="submit">Crear</button></div>
+    </form>
+</details>
+<details class="pv-section">
+    <summary>Áreas (@areas.Count)</summary>
+    <p>@string.Join(" · ", areas.Select(a => $"{a.Code} {a.Name}"))</p>
+    <form asp-action="CreateArea" method="post" class="pv-actions">
+        <input name="code" placeholder="Código" maxlength="30" required />
+        <input name="name" placeholder="Nombre" maxlength="150" required />
+        <button type="submit" class="pv-secondary">Crear área</button>
+    </form>
+</details>
+@foreach (var u in Model.Items)
+{
+    <details class="pv-section">
+        <summary>
+            @u.UserName · @u.DisplayName · @(u.Roles.Count == 0 ? "sin roles" : string.Join(", ", u.Roles))
+            @(u.IsActive ? "" : " · INACTIVO") @(u.IsLockedOut ? " · BLOQUEADO" : "") @(u.MustChangePassword ? " · contraseña temporal" : "")
+        </summary>
+        <div class="pv-grid">
+            <form asp-action="Update" asp-route-id="@u.Id" method="post" class="pv-form">
+                <label>Nombre visible <input name="displayName" value="@u.DisplayName" maxlength="200" required /></label>
+                <label>Correo <input type="email" name="email" value="@u.Email" maxlength="256" /></label>
+                <label>
+                    Área
+                    <select name="areaId"><option value="">—</option>@foreach (var a in areas) { <option value="@a.Id" selected="@(u.AreaId == a.Id)">@a.Name</option> }</select>
+                </label>
+                <input type="hidden" name="managerUserId" value="@u.ManagerUserId" />
+                <label class="pv-check"><input type="checkbox" name="isActive" value="true" checked="@u.IsActive" /> Activo</label>
+                <div class="pv-actions"><button type="submit">Guardar</button></div>
+            </form>
+            <form asp-action="Roles" asp-route-id="@u.Id" method="post" data-confirm="¿Actualizar los roles? Se cerrarán las sesiones del usuario.">
+                @foreach (var r in roles) { <label class="pv-check"><input type="checkbox" name="roles" value="@r" checked="@u.Roles.Contains(r)" /> @r</label> }
+                <div class="pv-actions"><button type="submit">Guardar roles</button></div>
+            </form>
+            <div class="pv-actions">
+                <form asp-action="ResetPassword" asp-route-id="@u.Id" method="post" data-confirm="Se generará una contraseña temporal y se cerrarán sus sesiones. ¿Continuar?">
+                    <input type="hidden" name="userName" value="@u.UserName" />
+                    <button type="submit" class="pv-secondary">Restablecer contraseña</button>
+                </form>
+                @if (u.IsLockedOut)
+                {
+                    <form asp-action="Unlock" asp-route-id="@u.Id" method="post"><button type="submit" class="pv-secondary">Desbloquear</button></form>
+                }
+            </div>
+        </div>
+    </details>
+}

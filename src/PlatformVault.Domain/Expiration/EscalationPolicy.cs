@@ -1,0 +1,25 @@
+namespace PlatformVault.Domain.Expiration;
+
+/// <summary>Escalamiento de alertas no reconocidas (RN-069, RN-070).</summary>
+public static class EscalationPolicy
+{
+    public const byte MaxLevel = 4;
+
+    /// <summary>Plazo sin reconocimiento antes de escalar. Crítica usa el plazo de Alta (supuesto IMP-13).</summary>
+    public static TimeSpan WindowFor(AlertSeverity severity) => severity switch
+    {
+        AlertSeverity.Critical or AlertSeverity.High => TimeSpan.FromHours(24),
+        AlertSeverity.Medium => TimeSpan.FromHours(72),
+        _ => TimeSpan.FromDays(7),
+    };
+
+    public static byte NextLevel(byte current) => current >= MaxLevel ? MaxLevel : (byte)(current + 1);
+
+    public static string LevelName(byte level) => level switch
+    {
+        1 => "N1 · Propietario técnico",
+        2 => "N2 · Propietario funcional",
+        3 => "N3 · Custodios del área y responsable jerárquico",
+        _ => "N4 · Seguridad de la Información",
+    };
+}

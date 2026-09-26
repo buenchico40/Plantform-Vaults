@@ -1,0 +1,66 @@
+@model RequestsModel
+@{
+    ViewData["Title"] = "Solicitudes y accesos";
+    var canAll = User.IsInRole("Auditor") || User.IsInRole("Seguridad");
+}
+<h1>Solicitudes y accesos temporales</h1>
+<div class="pv-actions">
+    <a asp-action="Index" asp-route-scope="Mine" class="@(Model.Scope == "Mine" ? "pv-button" : "")">Mis solicitudes</a>
+    <a asp-action="Index" asp-route-scope="PendingForMe" class="@(Model.Scope == "PendingForMe" ? "pv-button" : "")">Pendientes de mi aprobación</a>
+    @if (canAll)
+    {
+        <a asp-action="Index" asp-route-scope="All" class="@(Model.Scope == "All" ? "pv-button" : "")">Todas</a>
+    }
+</div>
+<div class="pv-card">
+    <table class="pv-table">
+        <tr><th>Código</th><th>Objeto</th><th>Acción</th><th>Solicitante</th><th>Duración</th><th>Aprueba</th><th>Estado</th><th>Creada</th></tr>
+        @foreach (var r in Model.Requests.Items)
+        {
+            <tr>
+                <td><a asp-action="Details" asp-route-id="@r.Id">@r.Code</a></td>
+                <td>@r.ObjectCode · @r.ObjectName @if (r.Criticality == "Crítico") { <span class="pv-badge pv-critical">CRÍTICO</span> }</td>
+                <td>@Display.Type(r.Action)</td>
+                <td>@r.RequesterName</td>
+                <td>@r.RequestedDurationMinutes min</td>
+                <td>@Display.Type(r.ApproverKind)</td>
+                <td>@r.State</td>
+                <td>@Display.Date(r.CreatedAt)</td>
+            </tr>
+        }
+        @if (Model.Requests.Items.Count == 0)
+        {
+            <tr><td colspan="8" class="pv-muted">Sin solicitudes.</td></tr>
+        }
+    </table>
+</div>
+
+<h2>Mis accesos temporales</h2>
+<div class="pv-card">
+    <table class="pv-table">
+        <tr><th>Objeto</th><th>Acción</th><th>Desde</th><th>Hasta</th><th>Estado</th><th></th></tr>
+        @foreach (var a in Model.Accesses)
+        {
+            <tr>
+                <td><a asp-controller="Objects" asp-action="Details" asp-route-id="@a.ObjectId">@a.ObjectCode · @a.ObjectName</a></td>
+                <td>@Display.Type(a.Action)</td>
+                <td>@Display.Date(a.StartAt)</td>
+                <td>@Display.Date(a.EndAt)</td>
+                <td>@a.State @a.RevokeReason</td>
+                <td>
+                    @if (a.State is "Activo" or "Programado")
+                    {
+                        <form asp-action="Revoke" asp-route-id="@a.Id" method="post" class="pv-actions" data-confirm="¿Revocar este acceso ahora?">
+                            <input name="reason" value="Ya no es necesario" maxlength="300" required />
+                            <button type="submit" class="pv-secondary">Revocar</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        @if (Model.Accesses.Count == 0)
+        {
+            <tr><td colspan="6" class="pv-muted">Sin accesos temporales.</td></tr>
+        }
+    </table>
+</div>

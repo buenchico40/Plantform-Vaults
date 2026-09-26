@@ -1,8 +1,41 @@
-﻿@{
-    ViewData["Title"] = "Home Page";
+@model DashboardSummary
+@{
+    ViewData["Title"] = "Tablero";
+    var byType = Model.ByType.Select(c => new { key = Display.Type(c.Key), count = c.Count }).ToList();
+    var byCriticality = Model.ByCriticality.Select(c => new { key = Display.Type(c.Key), count = c.Count }).ToList();
+    var byExpiration = Model.ByExpirationStatus.Select(c => new { key = Display.Type(c.Key), count = c.Count }).ToList();
 }
-
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<h1>Tablero operativo</h1>
+<p class="pv-muted">Datos limitados a su ámbito de visibilidad (RN-010).</p>
+<div class="pv-kpis">
+    <div class="pv-kpi"><b>@Model.Total</b><span>Objetos</span></div>
+    <div class="pv-kpi"><b>@Model.Active</b><span>Activos</span></div>
+    <div class="pv-kpi @(Model.Expired > 0 ? "pv-alert" : "")"><b>@Model.Expired</b><span>Expirados</span></div>
+    <div class="pv-kpi @(Model.ExpiringSoon > 0 ? "pv-alert" : "")"><b>@Model.ExpiringSoon</b><span>Vencen en 30 días</span></div>
+    <div class="pv-kpi @(Model.WithoutOwner > 0 ? "pv-alert" : "")"><b>@Model.WithoutOwner</b><span>Sin propietario</span></div>
+    <div class="pv-kpi"><b>@Model.OpenAlerts</b><span>Alertas abiertas</span></div>
+    <div class="pv-kpi"><b>@Model.PendingRequests</b><span>Solicitudes pendientes</span></div>
+</div>
+<div class="pv-grid">
+    <div class="pv-card">
+        <h3>Por tipo</h3>
+        @(Html.DevExtreme().Chart().ID("chartType")
+            .DataSource(byType)
+            .Series(s => s.Add().ArgumentField("key").ValueField("count").Type(SeriesType.Bar).Name("Objetos"))
+            .Legend(l => l.Visible(false)).Size(sz => sz.Height(240)))
+    </div>
+    <div class="pv-card">
+        <h3>Por criticidad</h3>
+        @(Html.DevExtreme().PieChart().ID("chartCriticality")
+            .DataSource(byCriticality)
+            .Series(s => s.Add().ArgumentField("key").ValueField("count").Label(l => l.Visible(true)))
+            .Size(sz => sz.Height(240)))
+    </div>
+    <div class="pv-card">
+        <h3>Por estado de expiración</h3>
+        @(Html.DevExtreme().PieChart().ID("chartExpiration").Type(PieChartType.Doughnut)
+            .DataSource(byExpiration)
+            .Series(s => s.Add().ArgumentField("key").ValueField("count").Label(l => l.Visible(true)))
+            .Size(sz => sz.Height(240)))
+    </div>
 </div>

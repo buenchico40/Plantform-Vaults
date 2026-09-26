@@ -1,24 +1,16 @@
-using System.Diagnostics;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PlatformVault.Web.Models;
+using PlatformVault.Web.Api;
 
 namespace PlatformVault.Web.Controllers;
 
-public class HomeController : Controller
+public sealed class HomeController(PlatformApi api) : Controller
 {
-    public IActionResult Index()
-    {
-        return View();
-    }
+    /// <summary>US-038: tablero operativo filtrado por el ámbito del usuario.</summary>
+    public async Task<IActionResult> Index(CancellationToken ct) => View(await api.GetAsync<DashboardSummary>("dashboards/operational", ct));
 
-    public IActionResult Privacy()
-    {
-        return View();
-    }
+    public IActionResult Denied() => View();
 
-    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-    public IActionResult Error()
-    {
-        return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
-    }
+    [AllowAnonymous]
+    public IActionResult Error() => View();
 }

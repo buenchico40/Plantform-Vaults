@@ -1,0 +1,40 @@
+@model Paged<AlertView>
+@{
+    ViewData["Title"] = "Alertas";
+    var onlyOpen = ViewBag.OnlyOpen is true;
+}
+<div class="pv-actions">
+    <h1>Alertas de vencimiento</h1>
+    <a asp-action="Index" asp-route-onlyOpen="@(!onlyOpen)">@(onlyOpen ? "Ver también resueltas" : "Solo abiertas")</a>
+</div>
+<div class="pv-card">
+    <table class="pv-table">
+        <tr><th>Objeto</th><th>Tipo</th><th>Vence</th><th>Umbral</th><th>Severidad</th><th>Estado</th><th>Nivel</th><th>Generada</th><th></th></tr>
+        @foreach (var a in Model.Items)
+        {
+            <tr>
+                <td><a asp-controller="Objects" asp-action="Details" asp-route-id="@a.ObjectId">@a.ObjectCode · @a.ObjectName</a></td>
+                <td>@Display.Type(a.ObjectType)</td>
+                <td>@Display.Date(a.ExpirationDate)</td>
+                <td>@(a.ThresholdDays is { } d ? $"{d} días" : "Expirado")</td>
+                <td>@if (a.Severity is "Crítica" or "Alta") { <span class="pv-badge pv-critical">@a.Severity</span> } else { @a.Severity }</td>
+                <td>@a.State</td>
+                <td>N@(a.EscalationLevel)</td>
+                <td>@Display.Date(a.CreatedAt)</td>
+                <td>
+                    @if (a.State is "Generada" or "Escalada")
+                    {
+                        <form asp-action="Acknowledge" asp-route-id="@a.Id" method="post" class="pv-actions">
+                            <input name="comment" placeholder="Comentario" maxlength="500" required />
+                            <button type="submit" class="pv-secondary">Reconocer</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="9" class="pv-muted">Sin alertas.</td></tr>
+        }
+    </table>
+</div>

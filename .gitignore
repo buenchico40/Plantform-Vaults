@@ -480,3 +480,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# IMP-38: recursos del proveedor copiados al compilar desde la instalación local de DevExpress
+src/PlatformVault.Web/wwwroot/lib/devextreme/
+# Registros locales
+logs/
+

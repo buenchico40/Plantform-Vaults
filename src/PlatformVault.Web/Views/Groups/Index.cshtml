@@ -1,0 +1,39 @@
+@model Paged<GroupSummary>
+@{ ViewData["Title"] = "Grupos"; }
+<h1>Grupos de acceso</h1>
+<p class="pv-muted">Los grupos se crean en la plataforma, no se sincronizan con directorios y solo organizan quién accede a qué objetos (RN-033).</p>
+@if (User.Can("ManageGroups"))
+{
+    <details class="pv-section">
+        <summary>Crear grupo</summary>
+        <form asp-action="Create" method="post" class="pv-form">
+            <label>Nombre <input name="name" maxlength="150" required /></label>
+            <label>
+                Responsable
+                <input data-user-picker="resp" placeholder="Buscar usuario…" />
+                <select id="resp" name="responsibleUserId" required><option value="">— seleccione —</option></select>
+            </label>
+            <label class="pv-wide">Descripción <textarea name="description" maxlength="500"></textarea></label>
+            <div class="pv-actions"><button type="submit">Crear</button></div>
+        </form>
+    </details>
+}
+<div class="pv-card">
+    <table class="pv-table">
+        <tr><th>Código</th><th>Nombre</th><th>Miembros</th><th>Objetos</th><th>Estado</th></tr>
+        @foreach (var g in Model.Items)
+        {
+            <tr>
+                <td><a asp-action="Details" asp-route-id="@g.Id">@g.Code</a></td>
+                <td>@g.Name</td>
+                <td>@g.MemberCount</td>
+                <td>@g.ObjectCount</td>
+                <td>@(g.IsActive ? "Activo" : "Inactivo")</td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="5" class="pv-muted">No pertenece a ningún grupo.</td></tr>
+        }
+    </table>
+</div>

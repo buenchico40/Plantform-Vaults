@@ -1,0 +1,110 @@
+﻿@model ObjectFormModel
+@{
+    ViewData["Title"] = "Registrar objeto";
+    var f = Model.Form;
+    string[] types = ["Certificate", "CryptographicKey", "Secret", "Credential", "ServiceAccount"];
+}
+<h1>Registrar objeto</h1>
+<p class="pv-muted">El objeto se crea en estado Borrador. Para activarlo necesita propietarios, expiración (o la marca «Sin vencimiento») y, si es Crítico o Restringido, un grupo con dos o más miembros activos.</p>
+@if (!User.IsInRole("Custodio"))
+{
+    <p class="pv-msg pv-err">Como Operador, debe figurar como propietario funcional o técnico del objeto que registra; de lo contrario dejaría de verlo.</p>
+}
+<form class="pv-card" asp-action="Create" method="post" enctype="multipart/form-data" autocomplete="off">
+    <div asp-validation-summary="All" class="pv-err"></div>
+    <div class="pv-form">
+        <label>
+            Tipo
+            <select id="Form_Type" name="Type">
+                @foreach (var t in types)
+                {
+                    <option value="@t" selected="@(f.Type == t)">@Display.Type(t)</option>
+                }
+            </select>
+        </label>
+        <label>
+            Subtipo
+            <select id="Form_Subtype" name="Subtype">
+                @foreach (var s in Model.Subtypes)
+                {
+                    <option value="@s.Code" data-type="@s.Type" selected="@(f.Subtype == s.Code)">@s.DisplayName</option>
+                }
+            </select>
+        </label>
+        <label>Nombre <input name="Name" value="@f.Name" maxlength="200" required /></label>
+        <label>
+            Área
+            <select name="AreaId">
+                @foreach (var a in Model.Areas)
+                {
+                    <option value="@a.Id" selected="@(f.AreaId == a.Id)">@a.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Criticidad
+            <select name="Criticality">
+                @foreach (var c in new[] { "Crítico", "Alto", "Medio", "Bajo" })
+                {
+                    <option value="@c" selected="@(f.Criticality == c)">@c</option>
+                }
+            </select>
+        </label>
+        <label>
+            Sensibilidad
+            <select name="Sensitivity">
+                @foreach (var s in new[] { "Pública", "Interna", "Confidencial", "Restringida" })
+                {
+                    <option value="@s" selected="@(f.Sensitivity == s)">@s</option>
+                }
+            </select>
+        </label>
+        <label>
+            Ambiente
+            <select name="Environment">
+                @foreach (var e in new[] { "Producción", "ContingenciaDR", "PreproducciónUAT", "QA", "Desarrollo" })
+                {
+                    <option value="@e" selected="@(f.Environment == e)">@e</option>
+                }
+            </select>
+        </label>
+        <label>
+            Custodia
+            <select name="CustodyMode">
+                <option value="Internal" selected="@(f.CustodyMode == "Internal")">Interna (custodia el valor cifrado)</option>
+                <option value="MetadataOnly" selected="@(f.CustodyMode == "MetadataOnly")">Solo metadatos</option>
+            </select>
+        </label>
+        <label>Fecha de expiración <input type="datetime-local" name="ExpirationDate" value="@f.ExpirationDate?.ToString("yyyy-MM-ddTHH:mm")" /></label>
+        <label class="pv-check"><input type="checkbox" name="NoExpirationJustified" value="true" checked="@f.NoExpirationJustified" /> Sin vencimiento (justificado)</label>
+        <label>
+            Propietario funcional
+            <input data-user-picker="fo" placeholder="Buscar usuario…" />
+            <select id="fo" name="FunctionalOwnerId"><option value="">— seleccione —</option></select>
+        </label>
+        <label>
+            Propietario técnico
+            <input data-user-picker="to" placeholder="Buscar usuario…" />
+            <select id="to" name="TechnicalOwnerId"><option value="">— seleccione —</option></select>
+        </label>
+        <label class="pv-wide">Descripción <textarea name="Description" maxlength="1000">@f.Description</textarea></label>
+        <label class="pv-wide">
+            Atributos del tipo (uno por línea, clave=valor)
+            <textarea name="Attributes" maxlength="4000" placeholder="targetSystem=srv-pagos&#10;accountName=svc_pagos">@f.Attributes</textarea>
+            <span class="pv-muted">Credenciales: targetSystem y accountName. Cuentas de servicio: directorySource y accountIdentifier. No incluya datos de tarjeta.</span>
+        </label>
+        <label class="pv-wide" data-for-type="Secret,Credential,ServiceAccount">
+            Valor inicial (opcional, se cifra antes de guardarse)
+            <input type="password" name="InitialValue" autocomplete="new-password" maxlength="65536" />
+        </label>
+        <label class="pv-wide" data-for-type="Certificate,CryptographicKey">
+            Archivo (certificado PEM/DER/CER/PFX o material de clave, máximo 64 KB)
+            <input type="file" name="File" />
+        </label>
+        <label data-for-type="Certificate">
+            Contraseña del contenedor PFX (solo se usa para abrirlo; no se guarda)
+            <input type="password" name="ContainerPassword" autocomplete="off" maxlength="256" />
+        </label>
+    </div>
+    <p class="pv-actions"><button type="submit">Registrar</button> <a asp-action="Index">Cancelar</a></p>
+</form>

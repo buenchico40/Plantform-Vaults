@@ -1,0 +1,283 @@
+@model ObjectDetailModel
+@{
+    var o = Model.Object;
+    ViewData["Title"] = o.Code;
+    var me = User.Id();
+    var isOwner = o.FunctionalOwnerId == me || o.TechnicalOwnerId == me;
+    var custodian = User.IsInRole("Custodio");
+    var canEdit = custodian || isOwner;
+    var canValue = custodian || o.TechnicalOwnerId == me || User.IsInRole("Operador");
+    var canClassify = canEdit || User.IsInRole("Seguridad");
+    var canRequest = (isOwner || custodian || User.IsInRole("Operador")) && o.HasValue && o.LifecycleState == "Activo";
+    var subtype = Model.Subtypes.FirstOrDefault(s => s.Type == o.Type && s.Code == o.Subtype);
+    var action = o.Type switch { "Certificate" => "DownloadPrivateKey", "CryptographicKey" => "DownloadKeyMaterial", _ => "Reveal" };
+    var now = DateTime.UtcNow;
+    var access = Model.MyAccesses.FirstOrDefault(a => a.State == "Activo" && a.StartAt <= now && a.EndAt > now);
+    var maxMinutes = o.Criticality == "Crítico" || o.Sensitivity == "Restringida" ? 240 : 480;
+}
+<div class="pv-actions">
+    <h1>@o.Code · @o.Name</h1>
+    @if (o.IsCritical)
+    {
+        <span class="pv-badge pv-critical">CRÍTICO</span>
+    }
+    <span class="pv-badge">@o.LifecycleState</span>
+    <span class="pv-badge">@o.ExpirationStatus</span>
+</div>
+
+<div class="pv-grid">
+    <div class="pv-card">
+        <h3>Metadatos</h3>
+        <dl class="pv-dl">
+            <dt>Tipo</dt><dd>@Display.Type(o.Type) · @(subtype?.DisplayName ?? o.Subtype)</dd>
+            <dt>Criticidad</dt><dd>@o.Criticality</dd>
+            <dt>Sensibilidad</dt><dd>@o.Sensitivity</dd>
+            <dt>Ambiente</dt><dd>@o.Environment</dd>
+            <dt>Área</dt><dd>@o.AreaName</dd>
+            <dt>Custodia</dt><dd>@(o.CustodyMode == "Internal" ? "Interna" : "Solo metadatos") @(o.HasValue ? "· valor cifrado custodiado" : "")</dd>
+            <dt>Propietario funcional</dt><dd>@(o.FunctionalOwnerName ?? "— sin asignar —")</dd>
+            <dt>Propietario técnico</dt><dd>@(o.TechnicalOwnerName ?? "— sin asignar —")</dd>
+            <dt>Expiración</dt><dd>@(o.NoExpirationJustified ? "Sin vencimiento (justificado)" : Display.Date(o.ExpirationDate))</dd>
+            <dt>Versión</dt><dd>@o.CurrentVersion</dd>
+            @if (o.ThumbprintSha256 is not null)
+            {
+                <dt>Huella SHA-256</dt><dd><code>@o.ThumbprintSha256</code></dd>
+                <dt>Certificado público</dt>
+                <dd>
+                    <form asp-action="PublicCertificate" asp-route-id="@o.Id" method="post">
+                        <button type="submit" class="pv-secondary">Descargar .cer</button>
+                    </form>
+                </dd>
+            }
+            @if (!string.IsNullOrEmpty(o.Description))
+            {
+                <dt>Descripción</dt><dd>@o.Description</dd>
+            }
+        </dl>
+    </div>
+    <div class="pv-card">
+        <h3>Atributos</h3>
+        @if (o.Attributes.Count == 0)
+        {
+            <p class="pv-muted">Sin atributos adicionales.</p>
+        }
+        else
+        {
+            <dl class="pv-dl">
+                @foreach (var kv in o.Attributes)
+                {
+                    <dt>@kv.Key</dt><dd>@kv.Value</dd>
+                }
+            </dl>
+        }
+        <h3>Grupos de acceso</h3>
+        @if (o.Groups.Count == 0)
+        {
+            <p class="pv-muted">No asignado a grupos.</p>
+        }
+        @foreach (var g in o.Groups)
+        {
+            <div><a asp-controller="Groups" asp-action="Details" asp-route-id="@g.Id">@g.Code · @g.Name</a> @(g.IsActive ? "" : "(inactivo)")</div>
+        }
+    </div>
+</div>
+
+@if (access is not null && o.HasValue)
+{
+    <div class="pv-card pv-reveal" id="pv-reveal-panel">
+        <h3>Acceso temporal vigente hasta @Display.Date(access.EndAt)</h3>
+        <p class="pv-muted">Cada uso se audita y se notifica a los demás miembros del grupo. Confirme su contraseña para continuar.</p>
+        @if (access.Action == "Reveal")
+        {
+            <div class="pv-actions">
+                <input type="password" id="pv-reveal-password" autocomplete="current-password" placeholder="Contraseña" maxlength="256" />
+                <button type="button" data-reveal="@o.Id">Revelar (30 s)</button>
+                <button type="button" class="pv-secondary" id="pv-reveal-copy">Copiar</button>
+            </div>
+            <p><input type="text" class="pv-reveal-output" id="pv-reveal-output" readonly autocomplete="off" /></p>
+            <p id="pv-reveal-status" class="pv-muted"></p>
+        }
+        else
+        {
+            <form asp-action="Download" asp-route-id="@o.Id" method="post" class="pv-actions" autocomplete="off" data-confirm="Se descargará material sensible. La descarga queda auditada. ¿Continuar?">
+                <input type="hidden" name="Part" value="@(access.Action == "DownloadPrivateKey" ? "PrivateKeyPfx" : "KeyMaterial")" />
+                <input type="password" name="Password" placeholder="Su contraseña" autocomplete="current-password" required maxlength="256" />
+                @if (access.Action == "DownloadPrivateKey")
+                {
+                    <input type="password" name="FilePassword" placeholder="Contraseña para proteger el PFX (≥ 12)" autocomplete="new-password" minlength="12" maxlength="256" required />
+                }
+                <button type="submit">@Display.Type(access.Action)</button>
+            </form>
+        }
+    </div>
+}
+else if (canRequest)
+{
+    <details class="pv-section">
+        <summary>Solicitar acceso temporal (@Display.Type(action))</summary>
+        <form asp-controller="Access" asp-action="Create" method="post" class="pv-form">
+            <input type="hidden" name="ObjectId" value="@o.Id" />
+            <input type="hidden" name="Action" value="@action" />
+            <label class="pv-wide">Justificación (mínimo 20 caracteres) <textarea name="Justification" minlength="20" maxlength="1000" required></textarea></label>
+            <label>Inicio (vacío = inmediato) <input type="datetime-local" name="RequestedStartAt" /></label>
+            <label>Duración en minutos (máximo @maxMinutes) <input type="number" name="RequestedDurationMinutes" value="60" min="1" max="@maxMinutes" /></label>
+            <div class="pv-actions"><button type="submit">Enviar solicitud</button></div>
+        </form>
+        <p class="pv-muted">Aprobador: @(o.IsCritical ? "Seguridad" : o.Sensitivity == "Restringida" ? "un par de su grupo" : "el propietario").</p>
+    </details>
+}
+
+@if (canEdit)
+{
+    <details class="pv-section">
+        <summary>Editar metadatos</summary>
+        <form asp-action="Edit" asp-route-id="@o.Id" method="post" class="pv-form">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            <label>Nombre <input name="Name" value="@o.Name" maxlength="200" required /></label>
+            @if (o.ThumbprintSha256 is null)
+            {
+                <label>Expiración <input type="datetime-local" name="ExpirationDate" value="@o.ExpirationDate?.ToLocalTime().ToString("yyyy-MM-ddTHH:mm")" /></label>
+                <label class="pv-check"><input type="checkbox" name="NoExpirationJustified" value="true" checked="@o.NoExpirationJustified" /> Sin vencimiento</label>
+            }
+            else
+            {
+                <input type="hidden" name="ExpirationDate" value="@o.ExpirationDate?.ToLocalTime().ToString("yyyy-MM-ddTHH:mm")" />
+                <p class="pv-muted">La expiración del certificado se toma del archivo (RN-016).</p>
+            }
+            <label class="pv-wide">Descripción <textarea name="Description" maxlength="1000">@o.Description</textarea></label>
+            <label class="pv-wide">Atributos (clave=valor) <textarea name="Attributes" maxlength="4000">@ObjectsController.FormatAttributes(o.Attributes)</textarea></label>
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Guardar</button></div>
+        </form>
+    </details>
+    <details class="pv-section">
+        <summary>Cambiar estado</summary>
+        <form asp-action="State" asp-route-id="@o.Id" method="post" class="pv-form" data-confirm="¿Confirma el cambio de estado? Suspender o desactivar revoca los accesos temporales vigentes.">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            <label>
+                Acción
+                <select name="Action">
+                    @if (o.LifecycleState == "Borrador") { <option value="Activate">Activar</option> }
+                    @if (o.LifecycleState == "Activo") { <option value="Suspend">Suspender</option> }
+                    @if (o.LifecycleState == "Suspendido" || o.LifecycleState == "Desactivado") { <option value="Reactivate">Reactivar</option> }
+                    @if (o.LifecycleState != "Desactivado") { <option value="Deactivate">Desactivar</option> }
+                </select>
+            </label>
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Aplicar</button></div>
+        </form>
+    </details>
+    <details class="pv-section">
+        <summary>Grupos de acceso</summary>
+        <form asp-action="Groups" asp-route-id="@o.Id" method="post" class="pv-form">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            @foreach (var g in Model.AvailableGroups)
+            {
+                <label class="pv-check"><input type="checkbox" name="GroupIds" value="@g.Id" checked="@o.Groups.Any(x => x.Id == g.Id)" /> @g.Code · @g.Name (@g.MemberCount miembros)</label>
+            }
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Guardar grupos</button></div>
+        </form>
+    </details>
+}
+@if (custodian)
+{
+    <details class="pv-section">
+        <summary>Propietarios</summary>
+        <form asp-action="Owners" asp-route-id="@o.Id" method="post" class="pv-form">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            <label>
+                Funcional
+                <input data-user-picker="own-f" placeholder="Buscar usuario…" />
+                <select id="own-f" name="FunctionalOwnerId" required>
+                    @if (o.FunctionalOwnerId is { } fid) { <option value="@fid">@o.FunctionalOwnerName</option> }
+                </select>
+            </label>
+            <label>
+                Técnico
+                <input data-user-picker="own-t" placeholder="Buscar usuario…" />
+                <select id="own-t" name="TechnicalOwnerId" required>
+                    @if (o.TechnicalOwnerId is { } tid) { <option value="@tid">@o.TechnicalOwnerName</option> }
+                </select>
+            </label>
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Asignar</button></div>
+        </form>
+    </details>
+}
+@if (canClassify)
+{
+    <details class="pv-section">
+        <summary>Clasificación</summary>
+        <form asp-action="Classification" asp-route-id="@o.Id" method="post" class="pv-form">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            <label>
+                Criticidad
+                <select name="Criticality">
+                    @foreach (var c in new[] { "Crítico", "Alto", "Medio", "Bajo" }) { <option value="@c" selected="@(o.Criticality == c)">@c</option> }
+                </select>
+            </label>
+            <label>
+                Sensibilidad
+                <select name="Sensitivity">
+                    @foreach (var s in new[] { "Pública", "Interna", "Confidencial", "Restringida" }) { <option value="@s" selected="@(o.Sensitivity == s)">@s</option> }
+                </select>
+            </label>
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Reclasificar</button></div>
+        </form>
+    </details>
+}
+@if (canValue && o.CustodyMode == "Internal" && o.LifecycleState != "Desactivado")
+{
+    <details class="pv-section">
+        <summary>Actualizar o renovar el valor</summary>
+        <form asp-action="Value" asp-route-id="@o.Id" method="post" enctype="multipart/form-data" class="pv-form" autocomplete="off"
+              data-confirm="Se registrará un valor nuevo y una nueva versión del objeto. ¿Continuar?">
+            <input type="hidden" name="ETag" value="@o.ETag" />
+            <input type="hidden" name="type" value="@o.Type" />
+            @if (o.Type is "Certificate" or "CryptographicKey")
+            {
+                <label class="pv-wide">Archivo (máximo 64 KB) <input type="file" name="File" required /></label>
+                @if (o.Type == "Certificate")
+                {
+                    <label>Contraseña del PFX <input type="password" name="ContainerPassword" autocomplete="off" maxlength="256" /></label>
+                }
+            }
+            else
+            {
+                <label class="pv-wide">Nuevo valor <input type="password" name="NewValue" autocomplete="new-password" maxlength="65536" required /></label>
+            }
+            @if (o.Type != "Certificate")
+            {
+                <label>Nueva expiración (renovación) <input type="datetime-local" name="NewExpirationDate" /></label>
+            }
+            <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>
+            <div class="pv-actions"><button type="submit">Guardar valor</button></div>
+        </form>
+    </details>
+}
+
+<details class="pv-section">
+    <summary>Versiones (@Model.Versions.Count)</summary>
+    <table class="pv-table">
+        <tr><th>Versión</th><th>Fecha</th><th>Usuario</th><th>Campos</th><th>Motivo</th></tr>
+        @foreach (var v in Model.Versions)
+        {
+            <tr><td>@v.Version</td><td>@Display.Date(v.ChangedAt)</td><td>@v.ChangedByName</td><td>@string.Join(", ", v.ChangedFields)</td><td>@v.Reason</td></tr>
+        }
+    </table>
+</details>
+@if (Model.Audit is not null)
+{
+    <details class="pv-section">
+        <summary>Auditoría del objeto (@Model.Audit.Count)</summary>
+        <table class="pv-table">
+            <tr><th>#</th><th>Fecha</th><th>Actor</th><th>Acción</th><th>Resultado</th><th>IP</th></tr>
+            @foreach (var e in Model.Audit)
+            {
+                <tr><td>@e.Sequence</td><td>@Display.Date(e.Timestamp)</td><td>@e.ActorName</td><td>@e.Action</td><td>@e.Result</td><td>@e.SourceIp</td></tr>
+            }
+        </table>
+    </details>
+}

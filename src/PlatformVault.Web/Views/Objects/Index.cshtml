@@ -1,0 +1,111 @@
+@model ObjectListModel
+@{
+    ViewData["Title"] = "Inventario";
+    var f = Model.Filter;
+    string[] types = ["Certificate", "CryptographicKey", "Secret", "Credential", "ServiceAccount"];
+}
+<div class="pv-actions">
+    <h1>Inventario</h1>
+    @if (User.Can("CreateObject"))
+    {
+        <a class="pv-button" asp-action="Create">Registrar objeto</a>
+    }
+</div>
+<form class="pv-card pv-form" method="get" asp-action="Index">
+    <label>Texto <input name="Text" value="@f.Text" maxlength="200" placeholder="Nombre, código o subtipo" /></label>
+    <label>
+        Tipo
+        <select name="Type">
+            <option value="">Todos</option>
+            @foreach (var t in types)
+            {
+                <option value="@t" selected="@(f.Type == t)">@Display.Type(t)</option>
+            }
+        </select>
+    </label>
+    <label>
+        Criticidad
+        <select name="Criticality">
+            <option value="">Todas</option>
+            @foreach (var c in new[] { "Crítico", "Alto", "Medio", "Bajo" })
+            {
+                <option value="@c" selected="@(f.Criticality == c)">@c</option>
+            }
+        </select>
+    </label>
+    <label>
+        Estado
+        <select name="LifecycleState">
+            <option value="">Todos</option>
+            @foreach (var s in new[] { "Borrador", "Activo", "Suspendido", "Desactivado" })
+            {
+                <option value="@s" selected="@(f.LifecycleState == s)">@s</option>
+            }
+        </select>
+    </label>
+    <label>
+        Expiración
+        <select name="ExpirationStatus">
+            <option value="">Todas</option>
+            @foreach (var s in new[] { "Vigente", "PróximoAVencer", "Expirado", "SinVencimiento" })
+            {
+                <option value="@s" selected="@(f.ExpirationStatus == s)">@s</option>
+            }
+        </select>
+    </label>
+    <label>
+        Ordenar por
+        <select name="SortBy">
+            @foreach (var s in new[] { ("Name", "Nombre"), ("Code", "Código"), ("ExpirationDate", "Expiración"), ("Criticality", "Criticidad"), ("CreatedAt", "Alta") })
+            {
+                <option value="@s.Item1" selected="@(f.SortBy == s.Item1)">@s.Item2</option>
+            }
+        </select>
+    </label>
+    <label class="pv-check"><input type="checkbox" name="SortDescending" value="true" checked="@f.SortDescending" /> Descendente</label>
+    <label class="pv-check"><input type="checkbox" name="WithoutOwner" value="true" checked="@f.WithoutOwner" /> Sin propietario</label>
+    <div class="pv-actions"><button type="submit">Buscar</button></div>
+</form>
+
+@(Html.DevExtreme().DataGrid<ObjectSummary>()
+    .ID("objectsGrid")
+    .DataSource(Model.Result.Items, "Id")
+    .ShowBorders(true)
+    .RowAlternationEnabled(true)
+    .ColumnAutoWidth(true)
+    .Paging(p => p.Enabled(false))
+    .Sorting(s => s.Mode(GridSortingMode.None))
+    .Columns(c =>
+    {
+        c.AddFor(m => m.Code).Caption("Código").CellTemplate(new JS("pv.objectLinkCell"));
+        c.AddFor(m => m.Name).Caption("Nombre");
+        c.AddFor(m => m.Type).Caption("Tipo");
+        c.AddFor(m => m.Subtype).Caption("Subtipo");
+        c.AddFor(m => m.Criticality).Caption("Criticidad");
+        c.AddFor(m => m.Sensitivity).Caption("Sensibilidad");
+        c.AddFor(m => m.Environment).Caption("Ambiente");
+        c.AddFor(m => m.LifecycleState).Caption("Estado");
+        c.AddFor(m => m.ExpirationStatus).Caption("Expiración");
+        c.AddFor(m => m.ExpirationDate).Caption("Vence").DataType(GridColumnDataType.Date);
+        c.AddFor(m => m.TechnicalOwnerName).Caption("Propietario técnico");
+    }))
+
+<div class="pv-actions" style="margin-top:12px">
+    <span class="pv-muted">@Model.Result.TotalItems objetos · página @Model.Result.Page de @Math.Max(1, Model.Result.TotalPages)</span>
+    @{
+        var route = new Dictionary<string, string?>
+        {
+            ["Text"] = f.Text, ["Type"] = f.Type, ["Criticality"] = f.Criticality, ["LifecycleState"] = f.LifecycleState,
+            ["ExpirationStatus"] = f.ExpirationStatus, ["SortBy"] = f.SortBy, ["SortDescending"] = f.SortDescending.ToString(),
+            ["WithoutOwner"] = f.WithoutOwner.ToString(),
+        };
+    }
+    @if (Model.Result.Page > 1)
+    {
+        <a asp-action="Index" asp-all-route-data="route" asp-route-Page="@(Model.Result.Page - 1)">Anterior</a>
+    }
+    @if (Model.Result.Page < Model.Result.TotalPages)
+    {
+        <a asp-action="Index" asp-all-route-data="route" asp-route-Page="@(Model.Result.Page + 1)">Siguiente</a>
+    }
+</div>

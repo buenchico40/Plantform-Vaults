@@ -1,9 +1,34 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>platformvault-web</UserSecretsId>
+    <!-- IMP-38: los scripts y estilos de DevExtreme se copian desde la instalación local licenciada; no se versionan. -->
+    <DevExtremeLibPath Condition="'$(DevExtremeLibPath)' == ''">$(ProgramW6432)\DevExpress 26.1\Components\Sources\DevExtreme\Lib</DevExtremeLibPath>
+    <DevExtremeTarget>$(MSBuildProjectDirectory)\wwwroot\lib\devextreme</DevExtremeTarget>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PlatformVault.Web.Tests" />
+  </ItemGroup>
+
+  <!-- La Web no referencia Infrastructure, Dapper, SqlClient ni la capa de datos (prompt §2): solo habla con la API por HTTP. -->
+  <ItemGroup>
+    <PackageReference Include="DevExtreme.AspNet.Core" />
+  </ItemGroup>
+
+  <Target Name="CopyDevExtremeAssets" BeforeTargets="BeforeBuild" Condition="!Exists('$(DevExtremeTarget)\js\dx.all.js')">
+    <Error Condition="!Exists('$(DevExtremeLibPath)\js\dx.all.js')"
+           Text="No se encontró DevExtreme en '$(DevExtremeLibPath)'. Instale DevExpress 26.1 o indique /p:DevExtremeLibPath=..." />
+    <ItemGroup>
+      <DxJs Include="$(DevExtremeLibPath)\js\dx.all.js;$(DevExtremeLibPath)\js\jquery.min.js;$(DevExtremeLibPath)\js\aspnet\dx.aspnet.mvc.js;$(DevExtremeLibPath)\js\aspnet\dx.aspnet.data.js;$(DevExtremeLibPath)\js\localization\dx.messages.es.js" />
+      <DxCss Include="$(DevExtremeLibPath)\css\dx.fluent.blue.light.css" />
+      <DxFonts Include="$(DevExtremeLibPath)\css\fonts\**\*" />
+      <DxIcons Include="$(DevExtremeLibPath)\css\icons\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DxJs)" DestinationFolder="$(DevExtremeTarget)\js" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DxCss)" DestinationFolder="$(DevExtremeTarget)\css" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DxFonts)" DestinationFolder="$(DevExtremeTarget)\css\fonts\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DxIcons)" DestinationFolder="$(DevExtremeTarget)\css\icons\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

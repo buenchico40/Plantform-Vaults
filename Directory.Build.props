@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- CA1848/CA1873: el registro con plantillas es suficiente en la Fase 1. CA1515/CA1711: convenciones de nombres de ASP.NET Core y xUnit. -->
+    <NoWarn>$(NoWarn);CA1848;CA1873;CA1515;CA1711;CA1707;CA1062;CA2007;CA1716;CA1720;CA1819;CA1305;CA1307;CA1309;CA1310;CA1304;CA1311;CA1031;CA1054;CA1056;CA1002;CA1710;CA1859;CA2227;CA1308;CA1024;CA1034;CA1822;CA1860;CA1861;CA5394</NoWarn>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,65 @@
+@model GroupDetail
+@{
+    ViewData["Title"] = Model.Code;
+    var admin = User.Can("ManageGroups");
+    var responsible = Model.Members.Any(m => m.UserId == User.Id() && m.IsResponsible);
+    var manage = (admin || responsible) && Model.IsActive;
+    var active = Model.Members.Count(m => m.IsActive);
+}
+<h1>@Model.Code · @Model.Name</h1>
+<div class="pv-card">
+    <dl class="pv-dl">
+        <dt>Estado</dt><dd>@(Model.IsActive ? "Activo" : "Inactivo")</dd>
+        <dt>Miembros activos</dt><dd>@active @if (active < 2) { <span class="pv-badge pv-critical">menos de 2: objetos críticos/restringidos bloqueados</span> }</dd>
+        <dt>Objetos</dt><dd>@Model.ObjectCount</dd>
+        <dt>Descripción</dt><dd>@Model.Description</dd>
+    </dl>
+</div>
+<div class="pv-card">
+    <h3>Miembros</h3>
+    <table class="pv-table">
+        <tr><th>Usuario</th><th>Nombre</th><th>Responsable</th><th>Desde</th><th></th></tr>
+        @foreach (var m in Model.Members)
+        {
+            <tr>
+                <td>@m.UserName</td>
+                <td>@m.DisplayName @(m.IsActive ? "" : "(inactivo)")</td>
+                <td>@(m.IsResponsible ? "Sí" : "")</td>
+                <td>@Display.Date(m.AddedAt)</td>
+                <td>
+                    @if (manage)
+                    {
+                        <form asp-action="RemoveMember" asp-route-id="@Model.Id" method="post" data-confirm="Al retirar al miembro se revocan sus accesos obtenidos por el grupo. ¿Continuar?">
+                            <input type="hidden" name="userId" value="@m.UserId" />
+                            <button type="submit" class="pv-secondary">Retirar</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+    </table>
+</div>
+@if (manage)
+{
+    <form class="pv-card pv-form" asp-action="AddMember" asp-route-id="@Model.Id" method="post">
+        <h3 class="pv-wide">Agregar miembro</h3>
+        <label>
+            Usuario
+            <input data-user-picker="member" placeholder="Buscar usuario…" />
+            <select id="member" name="userId" required><option value="">— seleccione —</option></select>
+        </label>
+        <label class="pv-check"><input type="checkbox" name="isResponsible" value="true" /> Responsable</label>
+        <div class="pv-actions"><button type="submit">Agregar</button></div>
+        <p class="pv-muted pv-wide">Auditor y Seguridad no pueden ser miembros (RN-103).</p>
+    </form>
+}
+@if (admin)
+{
+    <form class="pv-card pv-form" asp-action="Update" asp-route-id="@Model.Id" method="post" data-confirm="Desactivar el grupo revoca los accesos obtenidos por esa pertenencia. ¿Continuar?">
+        <h3 class="pv-wide">Editar grupo</h3>
+        <label>Nombre <input name="name" value="@Model.Name" maxlength="150" required /></label>
+        <label class="pv-check"><input type="checkbox" name="isActive" value="true" checked="@Model.IsActive" /> Activo</label>
+        <label class="pv-wide">Descripción <textarea name="description" maxlength="500">@Model.Description</textarea></label>
+        <div class="pv-actions"><button type="submit">Guardar</button></div>
+    </form>
+}

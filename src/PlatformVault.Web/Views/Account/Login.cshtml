@@ -1,0 +1,12 @@
+@model LoginForm
+@{ ViewData["Title"] = "Iniciar sesión"; }
+<div class="pv-card pv-login">
+    <h1>Iniciar sesión</h1>
+    <form asp-action="Login" method="post" autocomplete="off">
+        <div asp-validation-summary="All" class="pv-err"></div>
+        <label class="pv-field">Usuario <input asp-for="UserName" autocomplete="username" autofocus /></label>
+        <label class="pv-field">Contraseña <input asp-for="Password" autocomplete="current-password" /></label>
+        <p><button type="submit">Ingresar</button></p>
+    </form>
+    <p class="pv-muted">Tras 5 intentos fallidos la cuenta se bloquea 30 minutos.</p>
+</div>

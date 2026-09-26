@@ -1,18 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>platformvault-api</UserSecretsId>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <InternalsVisibleTo Include="PlatformVault.Api.Tests" />
   </ItemGroup>
-
   <ItemGroup>
-    <ProjectReference Include="..\PlatformVault.Application\PlatformVault.Application.csproj" />
-    <ProjectReference Include="..\PlatformVault.Infrastructure\PlatformVault.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
-
+  <ItemGroup>
+    <ProjectReference Include="../PlatformVault.Application/PlatformVault.Application.csproj" />
+    <ProjectReference Include="../PlatformVault.Infrastructure/PlatformVault.Infrastructure.csproj" />
+  </ItemGroup>
 </Project>

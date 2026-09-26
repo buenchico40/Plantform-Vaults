@@ -23,6 +23,17 @@ info:
         integración con Azure Key Vault ni con otros servicios de nube.
       * Los ejemplos de esta especificación nunca contienen secretos,
         contraseñas ni material de clave reales.
+      * Fase 1 (IMP-39, aprobada el 2026-09-25): el único cliente es
+        PlatformVault.Web, que se autentica con `X-API-Key` desde una red
+        permitida, y el usuario se identifica con el token opaco de sesión
+        `X-User-Session` que emite `POST /auth/login`. Entra ID
+        (`entraIdAuth`) corresponde a la Fase 2.
+      * Concurrencia optimista (IMP-44): las lecturas de objetos devuelven la
+        cabecera `ETag` y toda modificación de un objeto exige `If-Match`.
+      * Iteración 1A (IMP-40, IMP-41): los atributos propios de cada tipo se
+        envían en el diccionario `attributes`. Los campos marcados con
+        `x-not-supported-in` se rechazan con 400 (nunca se ignoran en
+        silencio) hasta la iteración o fase indicada.
   version: "1.0.0"
   contact:
     name: Equipo de Arquitectura PGCCS
@@ -69,9 +80,103 @@ tags:
     description: Recuperación de secretos por aplicaciones — Fase 2 (US-046, DEC-03)
 
 security:
-  - entraIdAuth: []
+  - apiClientKey: []
+    userSession: []
 
 paths:
+
+  # ============================================================
+  # AUTENTICACIÓN LOCAL — FASE 1 (IMP-39)
+  # ============================================================
+  /auth/login:
+    post:
+      tags: [Identity]
+      operationId: login
+      summary: Iniciar sesión con usuario y contraseña (Fase 1)
+      description: >
+        IMP-17, IMP-25, IMP-26. Emite un token opaco de 256 bits; la base solo
+        guarda su hash SHA-256. Inactividad de 15 min y máximo de 8 h. Tras 5
+        intentos fallidos la cuenta se bloquea 30 min. Con contraseña temporal
+        o caducada (90 días) `mustChangePassword` es true y solo se permite
+        cambiarla. Limitado a 20 intentos por minuto y dirección IP.
+      security:
+        - apiClientKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Sesión emitida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: Demasiados intentos
+
+  /auth/logout:
+    post:
+      tags: [Identity]
+      operationId: logout
+      summary: Cerrar la sesión actual (revoca el token)
+      responses:
+        "204":
+          description: Sesión revocada
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/reauthenticate:
+    post:
+      tags: [Identity]
+      operationId: reauthenticate
+      summary: Confirmar la contraseña antes de revelar, descargar o aprobar
+      description: >
+        IMP-29, IMP-49. Habilita las acciones sensibles durante 15 minutos. El
+        inicio de sesión cuenta como re-autenticación.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, format: password, writeOnly: true, maxLength: 256 }
+      responses:
+        "204":
+          description: Re-autenticación registrada
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/change-password:
+    post:
+      tags: [Identity]
+      operationId: changePassword
+      summary: Cambiar la propia contraseña
+      description: >
+        IMP-25. Mínimo 15 caracteres con mayúsculas, minúsculas, dígitos y
+        símbolos; no repite las últimas 4. Cierra las demás sesiones del usuario.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password, writeOnly: true, maxLength: 256 }
+                newPassword: { type: string, format: password, writeOnly: true, maxLength: 256 }
+      responses:
+        "204":
+          description: Contraseña cambiada
+        "400":
+          description: La contraseña no cumple la política
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   # ============================================================
   # IDENTITY
@@ -117,6 +222,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PagedUsers"
+    post:
+      tags: [Identity]
+      operationId: createUser
+      summary: Crear un usuario local (Fase 1, IMP-44)
+      description: >
+        Genera una contraseña temporal que se devuelve una sola vez y obliga a
+        cambiarla en el primer inicio de sesión (IMP-53). Valida la segregación
+        de funciones de los roles iniciales (RN-036).
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemporaryCredential" }
+        "400":
+          description: Datos no válidos
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/BusinessRuleViolation" }
+
+  /users/lookup:
+    get:
+      tags: [Identity]
+      operationId: lookupUsers
+      summary: Buscar usuarios activos para seleccionar propietarios o miembros (IMP-44)
+      description: Devuelve como máximo 20 usuarios, solo identificador y nombre (sin correo ni roles).
+      parameters:
+        - name: text
+          in: query
+          schema: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Usuarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/UserLookup" }
 
   /users/{userId}:
     parameters:
@@ -131,8 +281,54 @@ paths:
           description: Usuario
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/LocalUser" }
         "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Identity]
+      operationId: updateUser
+      summary: Editar o desactivar un usuario local (IMP-44)
+      description: >
+        Desactivar revoca sus sesiones y accesos temporales y cancela sus
+        solicitudes pendientes (RN-031). Nadie se desactiva a sí mismo.
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "204":
+          description: Usuario actualizado
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{userId}/reset-password:
+    parameters:
+      - $ref: "#/components/parameters/UserIdParam"
+    post:
+      tags: [Identity]
+      operationId: resetUserPassword
+      summary: Generar una contraseña temporal (IMP-44)
+      description: Cierra las sesiones del usuario. No aplica a la propia cuenta.
+      x-permission: Administrar
+      responses:
+        "200":
+          description: Contraseña temporal (se muestra una sola vez)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemporaryCredential" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{userId}/unlock:
+    parameters:
+      - $ref: "#/components/parameters/UserIdParam"
+    post:
+      tags: [Identity]
+      operationId: unlockUser
+      summary: Desbloquear una cuenta bloqueada por intentos fallidos (IMP-44)
+      x-permission: Administrar
+      responses:
+        "204":
+          description: Cuenta desbloqueada
 
   /users/{userId}/roles:
     parameters:
@@ -152,10 +348,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [role, scope]
+              required: [role]
               properties:
                 role: { $ref: "#/components/schemas/RoleName" }
-                scope: { $ref: "#/components/schemas/Scope" }
+                scope:
+                  $ref: "#/components/schemas/Scope"
+                  x-not-supported-in: "F1 — el ámbito se deriva del área del usuario (IMP-43); reservado para la Fase 2"
       responses:
         "202":
           description: >
@@ -352,6 +550,10 @@ paths:
               required: [userId]
               properties:
                 userId: { type: string, format: uuid }
+                isResponsible:
+                  type: boolean
+                  default: false
+                  description: "IMP-41. Designa o retira Responsables del grupo (RN-034); en 1A reemplaza a UpdateGroupRequest.responsibles."
       responses:
         "201":
           description: Miembro agregado
@@ -387,7 +589,6 @@ paths:
       tags: [ManagedObjects]
       operationId: searchManagedObjects
       summary: Buscar objetos administrados por múltiples criterios
-      description: RF-INV-05, RF-INV-06, RN-010 (ámbito del usuario). US-010.
       x-permission: Consultar
       parameters:
         - $ref: "#/components/parameters/PageParam"
@@ -449,6 +650,18 @@ paths:
         - name: includeDeleted
           in: query
           schema: { type: boolean, default: false }
+          x-not-supported-in: "1B (eliminación lógica)"
+        - name: sortBy
+          in: query
+          description: IMP-44. Orden por lista blanca.
+          schema: { type: string, enum: [Name, Code, ExpirationDate, CreatedAt, Criticality], default: Name }
+        - name: sortDescending
+          in: query
+          schema: { type: boolean, default: false }
+      description: >
+        RF-INV-05, RF-INV-06, RN-010 (ámbito del usuario). US-010. En la
+        iteración 1A los filtros `applicationId`, `insecureConfiguration`,
+        `noUsage`, `splitKey` e `includeDeleted` responden 400 (IMP-41).
       responses:
         "200":
           description: Página de objetos (metadatos únicamente, nunca Sensitive Payload)
@@ -473,9 +686,15 @@ paths:
           description: Objeto creado en estado Borrador
           headers:
             Location: { schema: { type: string } }
+            ETag: { schema: { type: string } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  code: { type: string, example: OBJ-000123 }
+                  eTag: { type: string }
         "409":
           description: Duplicado (huella SHA-256 ya registrada, RN-018) o dato de tarjeta detectado (RN-124)
           content:
@@ -539,8 +758,12 @@ paths:
       tags: [ManagedObjects]
       operationId: updateManagedObject
       summary: Editar metadatos de un objeto (genera nueva versión)
-      description: US-006. RN-002 (tipo inmutable), RN-092 (versión con motivo obligatorio).
+      description: >
+        US-006. RN-002 (tipo, subtipo, ambiente y área inmutables), RN-092
+        (versión con motivo obligatorio). Exige `If-Match` (IMP-44).
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
@@ -548,10 +771,15 @@ paths:
             schema: { $ref: "#/components/schemas/UpdateManagedObjectRequest" }
       responses:
         "200":
-          description: Objeto actualizado
+          description: Objeto actualizado; la cabecera `ETag` trae la nueva versión
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
+              schema: { $ref: "#/components/schemas/ObjectWriteResult" }
+        "409":
+          description: El objeto cambió desde que se leyó (concurrencia optimista)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   /objects/{objectId}/owners:
     parameters:
@@ -562,6 +790,8 @@ paths:
       summary: Asignar o reasignar el Propietario Funcional y/o Técnico
       description: "US-013. RN-087, RN-088 (objetos críticos: personas distintas), RN-089."
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
@@ -572,7 +802,7 @@ paths:
           description: Propietarios actualizados
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
+              schema: { $ref: "#/components/schemas/ObjectWriteResult" }
 
   /objects/{objectId}/classification:
     parameters:
@@ -585,26 +815,35 @@ paths:
         US-011. RN-003, RN-004, RN-019 (SWIFT), RN-107 (rebajar un objeto
         Crítico requiere aprobación de Seguridad).
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [criticality, sensitivity, reason]
               properties:
                 criticality: { $ref: "#/components/schemas/Criticality" }
                 sensitivity: { $ref: "#/components/schemas/Sensitivity" }
+                reason: { type: string, minLength: 5, maxLength: 500 }
       responses:
         "200":
           description: Clasificación aplicada
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
+              schema: { $ref: "#/components/schemas/ObjectWriteResult" }
         "202":
-          description: Cambio pendiente de aprobación de Seguridad (rebaja de objeto Crítico)
+          description: >
+            [1B] Cambio pendiente de aprobación de Seguridad. En la iteración
+            1A solo un usuario con rol Seguridad rebaja directamente un objeto
+            Crítico; los demás reciben 422.
+          x-not-supported-in: "1B"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AccessRequest" }
+        "422": { $ref: "#/components/responses/BusinessRuleViolation" }
 
   /objects/{objectId}/groups:
     parameters:
@@ -617,25 +856,29 @@ paths:
         US-028. RN-104 (Crítico/Restringido exige grupo con ≥ 2 miembros,
         nunca un grupo personal).
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [groupIds]
+              required: [groupIds, reason]
               properties:
                 groupIds:
                   type: array
+                  maxItems: 20
                   items: { type: string, format: uuid }
+                reason: { type: string, minLength: 5, maxLength: 500 }
       responses:
         "200":
           description: Asignación aplicada
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
-        "409":
-          description: El grupo no cumple el mínimo de miembros o es personal (RN-104)
+              schema: { $ref: "#/components/schemas/ObjectWriteResult" }
+        "422":
+          description: El grupo no cumple el mínimo de miembros o está inactivo (RN-104)
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -649,24 +892,32 @@ paths:
       summary: Activar, suspender, desactivar o reactivar el objeto
       description: US-007. RN-007 (transiciones permitidas), RN-009 (revoca accesos al suspender/desactivar).
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [action]
+              required: [action, reason]
               properties:
                 action: { type: string, enum: [Activate, Suspend, Deactivate, Reactivate] }
-                reason: { type: string }
+                reason: { type: string, minLength: 5, maxLength: 500 }
       responses:
         "200":
-          description: Nuevo estado
+          description: Nuevo estado, con los accesos revocados y las solicitudes canceladas (RN-009)
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
-        "409":
-          description: Transición no permitida (RN-007) o propietarios inválidos (RN-087)
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ObjectWriteResult"
+                  - type: object
+                    properties:
+                      revokedAccesses: { type: integer }
+                      cancelledRequests: { type: integer }
+        "422":
+          description: Transición no permitida (RN-007), propietarios inválidos (RN-087) o grupo insuficiente (RN-104)
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -840,13 +1091,36 @@ paths:
         - name: temporaryAccessId
           in: query
           schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        description: >
+          IMP-42. Solo para `part=PrivateKeyPfx`: contraseña con la que se
+          protege el PKCS#12 entregado (mínimo 12 caracteres). La contraseña
+          original del contenedor nunca se guarda (RN-015).
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                downloadPassword: { type: string, format: password, writeOnly: true, minLength: 12, maxLength: 256 }
       responses:
         "200":
-          description: Archivo binario (PEM público, o PFX/material con contraseña de un solo uso)
+          description: >
+            Archivo binario: certificado público DER (`application/pkix-cert`),
+            PKCS#12 protegido con `downloadPassword` (`application/x-pkcs12`) o
+            material de clave (`application/octet-stream`). La descarga del
+            certificado público solo requiere Consultar y se audita.
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
+        "400":
+          description: Falta `part` o la contraseña de protección del PKCS#12
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /objects/{objectId}/value:
     parameters:
@@ -857,23 +1131,34 @@ paths:
       summary: Actualizar o renovar el valor sensible (modo Interno, sin llave dividida)
       description: US-006. Genera una nueva versión (RN-092, RN-093).
       x-permission: Modificar
+      parameters:
+        - $ref: "#/components/parameters/IfMatchHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [newValue, reason]
+              required: [reason]
+              description: >
+                Según el tipo: `newValue` (secretos, credenciales y cuentas de
+                servicio), `keyMaterialBase64` (claves criptográficas) o
+                `certificateFileBase64` + `certificateContainerPassword`
+                (certificados; la renovación toma huella, atributos y
+                expiración del archivo, RN-016).
               properties:
-                newValue: { type: string, format: password, writeOnly: true }
+                newValue: { type: string, format: password, writeOnly: true, maxLength: 65536 }
+                keyMaterialBase64: { type: string, format: byte, writeOnly: true }
+                certificateFileBase64: { type: string, format: byte, writeOnly: true }
+                certificateContainerPassword: { type: string, format: password, writeOnly: true, maxLength: 256 }
                 newExpirationDate: { type: string, format: date-time }
-                reason: { type: string }
+                reason: { type: string, minLength: 5, maxLength: 500 }
       responses:
         "200":
           description: Valor actualizado (nunca se devuelve el valor en la respuesta)
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ManagedObject" }
+              schema: { $ref: "#/components/schemas/ObjectWriteResult" }
 
   # ============================================================
   # SPLIT KEY
@@ -1260,6 +1545,11 @@ paths:
       summary: Consultar mis accesos temporales (activos e históricos)
       description: US-034.
       x-permission: Consultar
+      parameters:
+        - name: onlyCurrent
+          in: query
+          description: IMP-44. Solo programados y activos.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Lista de accesos
@@ -1373,6 +1663,10 @@ paths:
         - name: objectId
           in: query
           schema: { type: string, format: uuid }
+        - name: onlyOpen
+          in: query
+          description: IMP-44. Excluye las resueltas. Por defecto true si no se filtra por `state`.
+          schema: { type: boolean }
       responses:
         "200":
           description: Página de alertas
@@ -1429,6 +1723,10 @@ paths:
           schema: { type: string, format: date-time }
         - name: actorId
           in: query
+          schema: { type: string }
+        - name: resourceType
+          in: query
+          description: IMP-44.
           schema: { type: string }
         - name: resourceId
           in: query
@@ -1856,6 +2154,127 @@ paths:
               schema: { $ref: "#/components/schemas/ExportJob" }
 
   # ============================================================
+  # CATÁLOGOS, HISTORIALES Y OPERACIÓN — FASE 1 (IMP-44)
+  # ============================================================
+  /areas:
+    get:
+      tags: [Identity]
+      operationId: listAreas
+      summary: Listar las áreas organizativas
+      responses:
+        "200":
+          description: Áreas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Area" }
+    post:
+      tags: [Identity]
+      operationId: createArea
+      summary: Crear un área (Administrador)
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, name]
+              properties:
+                code: { type: string, maxLength: 30 }
+                name: { type: string, maxLength: 150 }
+      responses:
+        "201":
+          description: Área creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+        "409":
+          description: Código duplicado
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /catalog/subtypes:
+    get:
+      tags: [ManagedObjects]
+      operationId: listSubtypes
+      summary: Catálogo de tipos y subtipos con sus atributos obligatorios (RN-002)
+      responses:
+        "200":
+          description: Subtipos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SubtypeDefinition" }
+
+  /objects/{objectId}/ownership-history:
+    parameters:
+      - $ref: "#/components/parameters/ObjectIdParam"
+    get:
+      tags: [ManagedObjects]
+      operationId: listOwnershipHistory
+      summary: Historial de propietarios del objeto (RN-089)
+      x-permission: Consultar
+      responses:
+        "200":
+          description: Cambios de propiedad, del más reciente al más antiguo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OwnershipChange" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /expiration-policies/{policyId}:
+    parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Expiration]
+      operationId: updateExpirationPolicy
+      summary: Modificar una política de expiración (Seguridad)
+      description: >
+        RN-061 (los umbrales 30, 7 y 1 son obligatorios para Críticos y Altos),
+        RN-062. Los cuatro ojos de RN-046 pertenecen a la iteración 1B.
+      x-permission: Administrar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateExpirationPolicyRequest" }
+      responses:
+        "204":
+          description: Política actualizada
+        "422": { $ref: "#/components/responses/BusinessRuleViolation" }
+
+  /jobs/runs:
+    get:
+      tags: [Audit]
+      operationId: listJobRuns
+      summary: Historial de trabajos en segundo plano (salud de la plataforma, Administrador)
+      parameters:
+        - name: jobName
+          in: query
+          schema: { type: string, enum: [ExpirationMonitor, AlertEscalation, AccessWindow, AuditChainVerification, NotificationDispatch] }
+      responses:
+        "200":
+          description: Últimas 100 ejecuciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/JobRun" }
+
+  # ============================================================
   # APPLICATIONS — FASE 2 (documentado, no se implementa en F1)
   # ============================================================
   /applications/{applicationId}/objects/{objectId}/retrieve:
@@ -1926,11 +2345,33 @@ paths:
 components:
 
   securitySchemes:
+    apiClientKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        Fase 1 (IMP-05, IMP-27). Autenticación del cliente PlatformVault.Web.
+        La API guarda solo el SHA-256 de la clave, la compara en tiempo
+        constante y además exige que la IP de origen esté en una red permitida
+        (IMP-28). La clave nunca llega al navegador. El cliente autenticado
+        informa la IP del navegador en `X-Client-Ip`, que la API usa para la
+        auditoría (RN-072) y para limitar los intentos de inicio de sesión por
+        usuario final (IMP-60).
+    userSession:
+      type: apiKey
+      in: header
+      name: X-User-Session
+      description: >
+        Fase 1 (IMP-06, IMP-26). Token opaco de sesión emitido por
+        `POST /auth/login`. Inactividad de 15 min, máximo de 8 h y revocación
+        inmediata al cerrar sesión, cambiar la contraseña, cambiar los roles o
+        desactivar al usuario.
     entraIdAuth:
       type: oauth2
       description: >
-        Autenticación de usuarios de la plataforma (Front-End y clientes
-        interactivos) contra Microsoft Entra ID. RN-030, RN-032, RNF-SEG-01.
+        [Fase 2] Autenticación de usuarios de la plataforma (Front-End y
+        clientes interactivos) contra Microsoft Entra ID. RN-030, RN-032,
+        RNF-SEG-01.
       flows:
         authorizationCode:
           authorizationUrl: https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize
@@ -1979,6 +2420,14 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    IfMatchHeader:
+      name: If-Match
+      in: header
+      required: true
+      description: >
+        Valor del `ETag` leído del objeto (IMP-44). Si el objeto cambió desde
+        entonces, la API responde 409 CONCURRENCY_CONFLICT.
+      schema: { type: string }
 
   responses:
     Unauthorized:
@@ -1998,6 +2447,14 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
+    BusinessRuleViolation:
+      description: >
+        Regla de negocio incumplida. `code` identifica la regla de forma estable
+        (por ejemplo INVALID_STATE_TRANSITION, GROUP_REQUIREMENT_NOT_MET,
+        SELF_APPROVAL_FORBIDDEN, CARD_DATA_DETECTED).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   schemas:
 
@@ -2010,7 +2467,13 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
+        code: { type: string, description: "Código estable del error (p. ej. NOT_FOUND, CONCURRENCY_CONFLICT, REAUTHENTICATION_REQUIRED)" }
         correlationId: { type: string, format: uuid }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
 
     # ---------- Enumeraciones (domain-model.md §10) ----------
     ObjectType:
@@ -2118,7 +2581,93 @@ components:
           properties:
             items:
               type: array
-              items: { $ref: "#/components/schemas/User" }
+              items: { $ref: "#/components/schemas/LocalUser" }
+
+    LocalUser:
+      type: object
+      description: Usuario local de la Fase 1 (IMP-22). En la Fase 2 se amplía con el esquema User (Entra ID).
+      properties:
+        id: { type: string, format: uuid }
+        userName: { type: string }
+        displayName: { type: string }
+        email: { type: string, format: email, nullable: true }
+        areaId: { type: string, format: uuid, nullable: true }
+        managerUserId: { type: string, format: uuid, nullable: true }
+        isActive: { type: boolean }
+        isLockedOut: { type: boolean }
+        mustChangePassword: { type: boolean }
+        passwordChangedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleName" }
+
+    UserLookup:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userName: { type: string }
+        displayName: { type: string }
+
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [userName, displayName]
+      properties:
+        userName: { type: string, maxLength: 100 }
+        displayName: { type: string, maxLength: 200 }
+        email: { type: string, format: email, maxLength: 256, nullable: true }
+        areaId: { type: string, format: uuid, nullable: true }
+        managerUserId: { type: string, format: uuid, nullable: true }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleName" }
+
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, isActive]
+      properties:
+        displayName: { type: string, maxLength: 200 }
+        email: { type: string, format: email, maxLength: 256, nullable: true }
+        areaId: { type: string, format: uuid, nullable: true }
+        managerUserId: { type: string, format: uuid, nullable: true, description: Responsable jerárquico para el escalamiento N3 (IMP-15) }
+        isActive: { type: boolean }
+
+    SubtypeDefinition:
+      type: object
+      properties:
+        type: { $ref: "#/components/schemas/ObjectType" }
+        code: { type: string }
+        displayName: { type: string }
+        holdsValue: { type: boolean }
+        requiredAttributes:
+          type: array
+          items: { type: string }
+
+    OwnershipChange:
+      type: object
+      properties:
+        role: { $ref: "#/components/schemas/OwnerRole" }
+        previousUserId: { type: string, format: uuid, nullable: true }
+        previousUserName: { type: string, nullable: true }
+        newUserId: { type: string, format: uuid }
+        newUserName: { type: string, nullable: true }
+        changedBy: { type: string, format: uuid }
+        changedByName: { type: string, nullable: true }
+        changedAt: { type: string, format: date-time }
+        reason: { type: string }
+
+    JobRun:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        jobName: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [Running, Succeeded, Failed] }
+        itemsProcessed: { type: integer }
+        detail: { type: string, nullable: true }
     EmergencyAccount:
       type: object
       properties:
@@ -2183,13 +2732,18 @@ components:
         responsibleUserId: { type: string, format: uuid }
     UpdateGroupRequest:
       type: object
+      required: [name, status]
       properties:
+        name: { type: string, maxLength: 150 }
+        description: { type: string, maxLength: 500 }
         responsibles:
           type: array
           items: { type: string, format: uuid }
+          x-not-supported-in: "1B — en 1A los responsables se gestionan con POST /groups/{groupId}/members (isResponsible)"
         notificationSettings:
           type: object
           additionalProperties: { type: boolean }
+          x-not-supported-in: "1B"
         status: { type: string, enum: [Activo, Inactivo] }
     PagedSecurityGroups:
       allOf:
@@ -2218,6 +2772,20 @@ components:
         applicationIds:
           type: array
           items: { type: string, format: uuid }
+          x-not-supported-in: "1B (requiere el catálogo de aplicaciones)"
+        attributes:
+          type: object
+          additionalProperties: { type: string, maxLength: 500 }
+          maxProperties: 20
+          description: >
+            Iteración 1A (IMP-40). Atributos propios del tipo con las claves de
+            los bloques `credential`, `certificate`, `secret`,
+            `cryptographicKey` y `serviceAccount` (por ejemplo `targetSystem`,
+            `accountName`, `directorySource`, `accountIdentifier`). Los de un
+            certificado cargado se extraen del archivo (RN-016).
+          example: { targetSystem: srv-pagos-db, accountName: svc_pagos }
+        hasValue: { type: boolean, readOnly: true, description: El objeto custodia un valor cifrado (nunca se devuelve aquí) }
+        eTag: { type: string, readOnly: true, description: Versión de fila para `If-Match` (IMP-44) }
         functionalOwnerId: { type: string, format: uuid, nullable: true }
         technicalOwnerId: { type: string, format: uuid, nullable: true }
         lifecycleState: { $ref: "#/components/schemas/LifecycleState", readOnly: true }
@@ -2225,11 +2793,15 @@ components:
         expirationDate: { type: string, format: date-time, nullable: true }
         noExpirationJustified: { type: boolean, default: false }
         custodyMode: { $ref: "#/components/schemas/CustodyMode" }
-        splitKey: { type: boolean, default: false }
+        splitKey:
+          type: boolean
+          default: false
+          x-not-supported-in: "1B (llave dividida, US-056 a US-058)"
         insecureConfiguration: { type: boolean, readOnly: true }
         tags:
           type: array
           items: { type: string }
+          x-not-supported-in: "1B"
         currentVersion: { type: integer, readOnly: true }
         lastUsedAt: { type: string, format: date-time, nullable: true, readOnly: true }
         createdBy: { type: string, readOnly: true }
@@ -2341,12 +2913,25 @@ components:
       allOf:
         - $ref: "#/components/schemas/ManagedObjectBase"
         - type: object
+          description: >
+            Iteración 1A (IMP-40, IMP-41): los bloques por tipo se envían en
+            `attributes`. Los bloques tipados se admitirán en 1B.
           properties:
-            credential: { $ref: "#/components/schemas/CredentialFields" }
-            certificate: { $ref: "#/components/schemas/CertificateFields" }
-            secret: { $ref: "#/components/schemas/SecretFields" }
-            cryptographicKey: { $ref: "#/components/schemas/CryptographicKeyFields" }
-            serviceAccount: { $ref: "#/components/schemas/ServiceAccountFields" }
+            credential:
+              $ref: "#/components/schemas/CredentialFields"
+              x-not-supported-in: "1B — usar attributes"
+            certificate:
+              $ref: "#/components/schemas/CertificateFields"
+              x-not-supported-in: "1B — usar attributes"
+            secret:
+              $ref: "#/components/schemas/SecretFields"
+              x-not-supported-in: "1B — usar attributes"
+            cryptographicKey:
+              $ref: "#/components/schemas/CryptographicKeyFields"
+              x-not-supported-in: "1B — usar attributes"
+            serviceAccount:
+              $ref: "#/components/schemas/ServiceAccountFields"
+              x-not-supported-in: "1B — usar attributes"
             certificateFileBase64: { type: string, format: byte, description: PEM/DER/CER/PFX (RN-015) }
             certificateContainerPassword: { type: string, format: password, writeOnly: true }
             initialValue: { type: string, format: password, writeOnly: true, description: "Sensitive Payload en modo Interno (RN-022, ≤64KB)" }
@@ -2354,23 +2939,76 @@ components:
 
     UpdateManagedObjectRequest:
       type: object
-      required: [reason]
+      required: [name, reason]
       properties:
-        name: { type: string }
-        description: { type: string }
+        name: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 1000 }
+        expirationDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: IMP-40. No editable en certificados cargados desde archivo (RN-016).
+        noExpirationJustified: { type: boolean, default: false, description: "IMP-40, IMP-50. Marca «Sin vencimiento» (RN-063)." }
+        attributes:
+          type: object
+          additionalProperties: { type: string, maxLength: 500 }
+          maxProperties: 20
+          description: IMP-40. Reemplaza los atributos del tipo.
         tags:
           type: array
           items: { type: string }
+          x-not-supported-in: "1B"
         applicationIds:
           type: array
           items: { type: string, format: uuid }
-        reason: { type: string }
+          x-not-supported-in: "1B"
+        reason: { type: string, minLength: 5, maxLength: 500 }
 
     AssignOwnersRequest:
       type: object
+      required: [functionalOwnerId, technicalOwnerId, reason]
       properties:
         functionalOwnerId: { type: string, format: uuid }
         technicalOwnerId: { type: string, format: uuid }
+        reason: { type: string, minLength: 5, maxLength: 500, description: "Motivo del cambio (RN-089, historial)" }
+
+    ObjectWriteResult:
+      type: object
+      description: Resultado de una modificación de objeto (IMP-44). El mismo valor viaja en la cabecera `ETag`.
+      properties:
+        eTag: { type: string }
+        currentVersion: { type: integer }
+        code: { type: string, nullable: true }
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [userName, password]
+      properties:
+        userName: { type: string, maxLength: 100 }
+        password: { type: string, format: password, writeOnly: true, maxLength: 256 }
+
+    LoginResponse:
+      type: object
+      properties:
+        sessionToken: { type: string, description: "Token opaco de 256 bits (Base64 URL). Se envía en X-User-Session." }
+        expiresAt: { type: string, format: date-time }
+        mustChangePassword: { type: boolean }
+
+    TemporaryCredential:
+      type: object
+      description: Contraseña temporal generada por el sistema. Se muestra una sola vez y obliga a cambiarla (IMP-53).
+      properties:
+        userId: { type: string, format: uuid }
+        temporaryPassword: { type: string, format: password }
+
+    Area:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        isActive: { type: boolean }
 
     ObjectVersion:
       type: object
@@ -2566,18 +3204,39 @@ components:
 
     CreateAccessRequest:
       type: object
-      required: [objectIds, action, justification, requestedStartAt, requestedDurationMinutes]
+      required: [objectIds, action, justification, requestedDurationMinutes]
       properties:
         objectIds:
           type: array
           items: { type: string, format: uuid }
+          minItems: 1
+          maxItems: 1
+          description: Iteración 1A (IMP-41) — exactamente un objeto por solicitud.
         action: { $ref: "#/components/schemas/AccessActionType" }
-        justification: { type: string, minLength: 20 }
-        requestedStartAt: { type: string, format: date-time }
-        requestedDurationMinutes: { type: integer }
-        jit: { type: boolean, default: false }
-        preferredApproverId: { type: string, format: uuid, nullable: true }
-        ticketReference: { type: string, nullable: true }
+        justification: { type: string, minLength: 20, maxLength: 1000 }
+        requestedStartAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Opcional; si se omite o ya pasó, el acceso empieza al aprobarse. Máximo 30 días en el futuro.
+        requestedDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 480
+          description: Máximo 240 para objetos Críticos o Restringidos y 480 para Confidenciales (RN-045, RN-048).
+        jit:
+          type: boolean
+          default: false
+          x-not-supported-in: "1B"
+        preferredApproverId:
+          type: string
+          format: uuid
+          nullable: true
+          x-not-supported-in: "1B — se notifica a todos los aprobadores elegibles"
+        ticketReference:
+          type: string
+          nullable: true
+          x-not-supported-in: "1B"
 
     PagedAccessRequests:
       allOf:
@@ -2622,14 +3281,21 @@ components:
 
     CreateExpirationPolicyRequest:
       type: object
+      required: [name, thresholdDays]
       properties:
+        name: { type: string, maxLength: 150, description: IMP-44 }
         appliesToType: { $ref: "#/components/schemas/ObjectType" }
-        appliesToSubtype: { type: string }
+        appliesToSubtype:
+          type: string
+          x-not-supported-in: "1B — en 1A la política más específica es tipo + criticidad"
         appliesToCriticality: { $ref: "#/components/schemas/Criticality" }
         thresholdDays:
           type: array
-          items: { type: integer }
-        maxValidityDays: { type: integer }
+          items: { type: integer, minimum: 1, maximum: 365 }
+        maxValidityDays:
+          type: integer
+          x-not-supported-in: "1B"
+        isActive: { type: boolean, default: true, description: IMP-44 }
 
     Alert:
       type: object

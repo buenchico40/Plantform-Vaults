@@ -17,6 +17,15 @@ Cada hallazgo indica la contradicción, los artefactos afectados, el impacto, la
 
 Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuestas se aplicarán en un cambio posterior y trazable, una vez cerradas las decisiones.
 
+## Aclaraciones del usuario (2026-09-25)
+
+1. **Identidad por fases:** Microsoft Entra ID, Active Directory, MFA y las cuentas de emergencia **no se retiran: pasan a la Fase 2**. La Fase 1 solo implementa usuario y contraseña locales.
+2. **Persistencia:** se usa **solo Dapper** con procedimientos almacenados; EF Core sale de la arquitectura.
+3. **Almacenamiento del contenido cifrado por fases:** en la Fase 1, esquema `vault` de la misma base de datos; **en la Fase 2, el Encrypted Vault como nodo separado**.
+4. **RA-01:** el factor único solo aplica a la Fase 1; el riesgo es temporal hasta la Fase 2.
+
+Estas aclaraciones actualizan las acciones de DR-01, DR-02, DR-03, DR-04, DR-07 y DR-09.
+
 ## Resumen
 
 | Severidad | Cantidad | Implementar | Requiere decisión |
@@ -30,7 +39,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 
 ## Hallazgos
 
-### DR-01 · Identidad: se retiran Microsoft Entra ID y Active Directory — **Alta · Implementar**
+### DR-01 · Identidad: Microsoft Entra ID y Active Directory pasan a la Fase 2 — **Alta · Implementar (Fase 1 local)**
 
 | | |
 |---|---|
@@ -38,9 +47,9 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | 01 R-03, S-01, S-07, DEC-06, DEC-33; 02 US-025, US-026, US-062; 03 RN-030, RN-031, RN-032, RN-069 (N3 = manager en Entra ID), RN-123, §2.6 (`DirectorySource`), §2.7; 04 R-03, RNF-SEG-01, RNF-SEG-06, RNF-SEG-15; c4 §1, §2, §6; OpenAPI `securitySchemes` |
 | Impacto | US-025 se reescribe para autenticación local. US-026 (validación de cuentas de servicio en AD) queda sin objeto. El «propietario inválido» de RN-031 pasa a depender de la baja del usuario en la plataforma, no en Entra ID. El manager que usa RN-069 debe ser un atributo local del usuario. |
 | Corrección propuesta | Implementar ASP.NET Core Identity con stores personalizados sobre procedimientos almacenados. Añadir `ManagerUserId` al usuario local. Retirar US-026 y DEC-06. `DirectorySource` de Service Account se conserva como dato descriptivo (EntraID, AD, Local, Database), sin integración. |
-| Acción | Implementar. La decisión técnica 1 prevalece. |
+| Acción | **Implementar en la Fase 1** la identidad local con usuario y contraseña. **Entra ID y Active Directory pasan a la Fase 2** (aclaración del 2026-09-25); no se retiran. US-025 (SSO con Entra ID) y US-026 (validación en AD) se reclasifican como Fase 2, y la autenticación local de la Fase 1 se especifica como historia nueva en el cambio de los artefactos aprobados. |
 
-### DR-02 · MFA obligatorio sin proveedor de identidad externo — **Alta · Decidido**
+### DR-02 · MFA obligatorio sin proveedor de identidad externo — **Alta · Decidido por fases**
 
 | | |
 |---|---|
@@ -48,7 +57,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | 04 RNF-SEG-01, RNF-SEG-15, §6.2 (PCI DSS 8.3/8.4); 02 US-016 (MFA reciente para revelar), US-025; 03 RN-032 |
 | Impacto | Sin MFA, la plataforma que custodia credenciales del entorno de tarjetas queda protegida por un único factor, lo que previsiblemente genera un hallazgo del QSA. Afecta directamente a controles de acceso. |
 | Corrección propuesta | Segundo factor TOTP (RFC 6238) con el proveedor de autenticador integrado en ASP.NET Core Identity (sin criptografía propia). Obligatorio para todos los usuarios, con re-autenticación por TOTP en las acciones sensibles (step-up ≤ 15 min). |
-| Acción | **Decidido (2026-09-25): un solo factor, usuario y contraseña. Riesgo aceptado** frente a RNF-SEG-01 y PCI DSS 8.4, registrado como RA-01 en assumptions-and-decisions.md. Controles compensatorios: contraseña de ≥ 15 caracteres, bloqueo de 30 min tras 5 intentos, rotación cada 90 días (PCI DSS 8.3.9), historial de 4 contraseñas y re-autenticación con contraseña (≤ 15 min) para revelar, descargar y aprobar. |
+| Acción | **Decidido (2026-09-25): Fase 1 solo usuario y contraseña; MFA pasa a la Fase 2.** Riesgo aceptado temporal RA-01 (vigente hasta la Fase 2). Controles compensatorios de la Fase 1: contraseña de ≥ 15 caracteres, bloqueo de 30 min tras 5 intentos, rotación cada 90 días (PCI DSS 8.3.9), historial de 4 contraseñas y re-autenticación con contraseña (≤ 15 min) para revelar, descargar y aprobar. |
 
 ### DR-03 · Persistencia con Dapper y procedimientos almacenados, sin EF Core — **Media · Implementar**
 
@@ -58,9 +67,9 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | c4 §2.2 (tecnología de la API), §3.2 (Repositories, Unit of Work); ADR-001 §Aclaración sobre CQRS (punto 1), §Justificación (punto 8) |
 | Impacto | Ninguno funcional. El Unit of Work se implementa sobre `SqlConnection` + `SqlTransaction`. Las consultas del lado Query son procedimientos dedicados. |
 | Corrección propuesta | Implementar con Dapper. Actualizar c4 y ADR-001 para sustituir EF Core por Dapper + procedimientos almacenados. |
-| Acción | Implementar. |
+| Acción | **Implementar: solo Dapper** con procedimientos almacenados. EF Core se elimina de la arquitectura en todas las fases (aclaración del 2026-09-25). Se corregirán c4 y ADR-001. |
 
-### DR-04 · Encrypted Vault como nodo separado frente a SQL Server con una única cuenta técnica — **Alta · Decidido**
+### DR-04 · Encrypted Vault como nodo separado frente a SQL Server con una única cuenta técnica — **Alta · Decidido por fases**
 
 | | |
 |---|---|
@@ -68,7 +77,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | domain-model §17 ASSUMPTION-ARCH-01, RISK-ARCH-02; c4 §2.1 (Zona 4), §2.2 (contenedor Encrypted Vault), §4, §5, RISK-C4-01, RISK-C4-05; ADR-001 R4 |
 | Impacto | Con una sola cuenta SQL desaparece la separación de credenciales entre metadatos y contenido cifrado. Se pierde parte de la defensa en profundidad, aunque el contenido sigue cifrado con la KEK. |
 | Corrección propuesta | **Opción A (recomendada):** misma base de datos, esquema dedicado `vault`, accesible solo desde procedimientos del esquema `vault`, con permisos por esquema. Una transacción ACID única elimina RISK-C4-01. **Opción B:** base de datos dedicada en la misma instancia, con la misma cuenta, lo que exige coordinar dos conexiones y reintroduce RISK-C4-01. |
-| Acción | **Decidido (2026-09-25): opción A.** Esquema `vault` en la misma base de datos, accesible solo desde sus procedimientos almacenados. |
+| Acción | **Decidido por fases (2026-09-25): Fase 1 — esquema `vault`** en la misma base de datos, accesible solo desde sus procedimientos almacenados. **Fase 2 — Encrypted Vault** como nodo separado, según ASSUMPTION-ARCH-01, que se conserva reclasificada a la Fase 2. |
 
 ### DR-05 · Custodia de la KEK — **Alta · Decidido**
 
@@ -98,7 +107,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | OpenAPI (tag Identity) |
 | Impacto | Sin ellas no se puede operar la plataforma. |
 | Corrección propuesta | Añadir `/auth/login`, `/auth/logout`, `/auth/session`, `/auth/password`, `/users` (POST/PATCH, bloqueo y desbloqueo, restablecimiento de contraseña) y `/auth/mfa/*` (según DR-02). |
-| Acción | Implementar, como consecuencia directa de DR-01. El diseño del segundo factor depende de DR-02. |
+| Acción | Implementar, como consecuencia directa de DR-01. En la Fase 1 no hay segundo factor (DR-02); los endpoints de MFA se diseñan en la Fase 2. |
 
 ### DR-08 · Tipos de objeto: ApiKey y Token — **Media · Implementar**
 
@@ -109,7 +118,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Corrección propuesta | 5 tipos (Certificate, CryptographicKey, Secret, Credential, ServiceAccount); API Key y OAuth Token como subtipos de Secret, filtrables por subtipo. |
 | Acción | Implementar. La propia regla del prompt resuelve la ambigüedad. |
 
-### DR-09 · Cuentas locales de emergencia (US-062, DEC-33) — **Alta · Decidido**
+### DR-09 · Cuentas locales de emergencia (US-062, DEC-33) — **Alta · Decidido por fases**
 
 | | |
 |---|---|
@@ -117,7 +126,7 @@ Ningún artefacto aprobado se ha modificado todavía. Las correcciones propuesta
 | Artefactos afectados | 01 DEC-33, R-03; 02 US-062; 03 RN-123; 04 RNF-SEG-15; OpenAPI `/emergency-accounts*` |
 | Impacto | Afecta a controles de acceso (activación conjunta de Administrador y Seguridad, ventana de 8 h). |
 | Corrección propuesta | Retirar US-062 y RN-123 como se hizo con DEC-35, y trasladar la política de contraseñas de RNF-SEG-15 a todas las cuentas locales. |
-| Acción | **Decidido (2026-09-25): se retiran US-062 y RN-123.** Su política de contraseñas se aplica a todas las cuentas locales. |
+| Acción | **Decidido (2026-09-25): las cuentas de emergencia pasan a la Fase 2** junto con Entra ID, porque solo tienen sentido cuando existe un proveedor de identidad externo que pueda fallar. No se retiran. En la Fase 1, la política de contraseñas de RNF-SEG-15 se aplica a todas las cuentas locales. |
 
 ### DR-10 · Alcance de la Fase 1: el prompt enumera menos historias que las aprobadas — **Alta · Decidido**
 

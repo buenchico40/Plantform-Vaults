@@ -1,0 +1,54 @@
+@model List<ExpirationPolicyView>
+@{
+    ViewData["Title"] = "Políticas de expiración";
+    var canEdit = User.Can("ManageExpirationPolicies");
+    string[] types = ["Certificate", "CryptographicKey", "Secret", "Credential", "ServiceAccount"];
+    string[] criticalities = ["Crítico", "Alto", "Medio", "Bajo"];
+}
+<h1>Políticas de expiración</h1>
+<p class="pv-muted">Se aplica la más específica: tipo y criticidad, tipo, criticidad, global (RN-062). Los objetos Críticos y Altos conservan siempre los umbrales 30, 7 y 1 (RN-061).</p>
+@foreach (var p in Model)
+{
+    <form class="pv-card pv-form" asp-action="SavePolicy" method="post">
+        <input type="hidden" name="id" value="@p.Id" />
+        <label>Nombre <input name="name" value="@p.Name" maxlength="150" required disabled="@(!canEdit)" /></label>
+        <label>
+            Tipo
+            <select name="appliesToType" disabled="@(!canEdit)">
+                <option value="">Todos</option>
+                @foreach (var t in types) { <option value="@t" selected="@(p.AppliesToType == t)">@Display.Type(t)</option> }
+            </select>
+        </label>
+        <label>
+            Criticidad
+            <select name="appliesToCriticality" disabled="@(!canEdit)">
+                <option value="">Todas</option>
+                @foreach (var c in criticalities) { <option value="@c" selected="@(p.AppliesToCriticality == c)">@c</option> }
+            </select>
+        </label>
+        <label>Umbrales (días) <input name="thresholds" value="@string.Join(",", p.ThresholdDays)" required disabled="@(!canEdit)" /></label>
+        <label class="pv-check"><input type="checkbox" name="isActive" value="true" checked="@p.IsActive" disabled="@(!canEdit)" /> Activa</label>
+        @if (canEdit)
+        {
+            <div class="pv-actions"><button type="submit">Guardar</button></div>
+        }
+    </form>
+}
+@if (canEdit)
+{
+    <form class="pv-card pv-form" asp-action="SavePolicy" method="post">
+        <h3 class="pv-wide">Nueva política</h3>
+        <label>Nombre <input name="name" maxlength="150" required /></label>
+        <label>
+            Tipo
+            <select name="appliesToType"><option value="">Todos</option>@foreach (var t in types) { <option value="@t">@Display.Type(t)</option> }</select>
+        </label>
+        <label>
+            Criticidad
+            <select name="appliesToCriticality"><option value="">Todas</option>@foreach (var c in criticalities) { <option value="@c">@c</option> }</select>
+        </label>
+        <label>Umbrales (días) <input name="thresholds" value="180,120,90,60,30,15,7,1" required /></label>
+        <input type="hidden" name="isActive" value="true" />
+        <div class="pv-actions"><button type="submit">Crear</button></div>
+    </form>
+}
