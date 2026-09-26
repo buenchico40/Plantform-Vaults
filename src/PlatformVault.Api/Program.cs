@@ -24,7 +24,12 @@ if (builder.Configuration.GetValue(JobOptions.Section + ":Enabled", true) && !ar
 
 builder.Services.AddScoped<MassAssignmentAuditFilter>();
 builder.Services
-    .AddControllers(o => o.Filters.AddService<MassAssignmentAuditFilter>())
+    .AddControllers(o =>
+    {
+        o.Filters.AddService<MassAssignmentAuditFilter>();
+        // Enumerados de consulta con los valores del contrato (p. ej. criticality=Crítico).
+        o.ModelBinderProviders.Insert(0, new ContractEnumModelBinderProvider());
+    })
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -33,6 +38,13 @@ builder.Services
         o.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
     });
 builder.Services.AddProblemDetails();
+// El generador de OpenAPI usa estas opciones: los enumerados se documentan como texto con los valores del contrato.
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
+});
+builder.Services.AddApiDocumentation();
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
 // Límite de intentos por IP del usuario final (no por la IP del servidor Web, que comparten todos los usuarios).
 var loginPermitsPerMinute = builder.Configuration.GetValue("Security:LoginAttemptsPerMinutePerClient", 20);
@@ -69,6 +81,7 @@ app.UseMiddleware<SessionMiddleware>();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready");
 app.MapControllers();
+app.MapApiDocumentation();
 
 app.Run();
 

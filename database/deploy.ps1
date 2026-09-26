@@ -13,8 +13,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Server = '(localdb)\MSSQLLocalDB',
-    [string] $DatabaseName = 'PlatformVault',
+    [string] $Server = '(localdb)\ProjectModels',
+    [string] $DatabaseName = 'PlatformVaultDB',
     [ValidateSet('NONE', 'SQL', 'WINDOWS')] [string] $AppLoginMode = 'NONE',
     [string] $AppLoginName = 'pv_app',
     [switch] $EnableTde,

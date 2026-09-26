@@ -17,7 +17,8 @@ public sealed class SessionMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, RequestIdentity identity, ISessionService sessions)
     {
         var path = context.Request.Path;
-        if (Anonymous.Any(a => path.StartsWithSegments(a, StringComparison.OrdinalIgnoreCase)))
+        if (Anonymous.Any(a => path.StartsWithSegments(a, StringComparison.OrdinalIgnoreCase))
+            || Infrastructure.ApiDocumentation.IsDocumentationRequest(context))
         {
             await next(context);
             return;

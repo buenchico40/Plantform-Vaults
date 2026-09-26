@@ -35,7 +35,9 @@ public sealed class ApiClientMiddleware(RequestDelegate next, IOptionsMonitor<Ap
 
     public async Task InvokeAsync(HttpContext context, RequestIdentity identity)
     {
-        if (context.Request.Path.StartsWithSegments("/health/live", StringComparison.OrdinalIgnoreCase))
+        // Salud: solo responde Healthy/Unhealthy, sin detalle; la usan el monitoreo y la verificación de instalación.
+        if (context.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase)
+            || Infrastructure.ApiDocumentation.IsDocumentationRequest(context))
         {
             await next(context);
             return;
