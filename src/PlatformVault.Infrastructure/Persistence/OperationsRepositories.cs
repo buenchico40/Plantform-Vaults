@@ -130,7 +130,7 @@ public sealed class ExpirationRepository(StoredProcedures sp) : IExpirationRepos
     {
         var rows = await sp.QueryAsync<CandidateRow>("app.usp_Expiration_GetMonitoringCandidates", new { NowUtc = nowUtc, HorizonDays = horizonDays }, ct);
         return rows.Select(r => new MonitoringCandidate(r.ObjectId, r.Code, r.Name, Enum<ObjectType>(r.ObjectType), Enum<Criticality>(r.Criticality),
-            Utc(r.ExpirationDate), r.FunctionalOwnerId, r.TechnicalOwnerId)).ToList();
+            Utc(r.ExpirationDate), r.OwnerId)).ToList();
     }
 
     private sealed class PolicyRow
@@ -152,8 +152,7 @@ public sealed class ExpirationRepository(StoredProcedures sp) : IExpirationRepos
         public string ObjectType { get; set; } = "";
         public string Criticality { get; set; } = "";
         public DateTime ExpirationDate { get; set; }
-        public Guid? FunctionalOwnerId { get; set; }
-        public Guid? TechnicalOwnerId { get; set; }
+        public Guid? OwnerId { get; set; }
     }
 }
 

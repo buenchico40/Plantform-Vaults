@@ -24,8 +24,7 @@ BEGIN
         WHERE ta.State IN ('Scheduled', 'Active')
           AND EXISTS (SELECT 1 FROM app.ObjectGroup AS og WHERE og.ObjectId = ta.ObjectId AND og.GroupId = @GroupId)
           AND EXISTS (SELECT 1 FROM app.GroupMember AS gm WHERE gm.GroupId = @GroupId AND gm.UserId = ta.BeneficiaryId)
-          AND ISNULL(o.FunctionalOwnerId, '00000000-0000-0000-0000-000000000000') <> ta.BeneficiaryId
-          AND ISNULL(o.TechnicalOwnerId, '00000000-0000-0000-0000-000000000000') <> ta.BeneficiaryId;
+          AND ISNULL(o.OwnerId, '00000000-0000-0000-0000-000000000000') <> ta.BeneficiaryId;
         SET @Revoked = @@ROWCOUNT;
     END
     COMMIT TRANSACTION;

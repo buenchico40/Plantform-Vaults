@@ -3,10 +3,10 @@
     var o = Model.Object;
     ViewData["Title"] = o.Code;
     var me = User.Id();
-    var isOwner = o.FunctionalOwnerId == me || o.TechnicalOwnerId == me;
+    var isOwner = o.OwnerId == me;
     var custodian = User.IsInRole("Custodio");
     var canEdit = custodian || isOwner;
-    var canValue = custodian || o.TechnicalOwnerId == me;
+    var canValue = custodian || isOwner;
     var canClassify = canEdit || User.IsInRole("Seguridad");
     var canRequest = (isOwner || custodian) && o.HasValue && o.LifecycleState == "Activo";
     var subtype = Model.Subtypes.FirstOrDefault(s => s.Type == o.Type && s.Code == o.Subtype);
@@ -35,8 +35,7 @@
             <dt>Ambiente</dt><dd>@o.Environment</dd>
             <dt>Área</dt><dd>@o.AreaName</dd>
             <dt>Custodia</dt><dd>@(o.CustodyMode == "Internal" ? "Interna" : "Solo metadatos") @(o.HasValue ? "· valor cifrado custodiado" : "")</dd>
-            <dt>Propietario funcional</dt><dd>@(o.FunctionalOwnerName ?? "— sin asignar —")</dd>
-            <dt>Propietario técnico</dt><dd>@(o.TechnicalOwnerName ?? "— sin asignar —")</dd>
+            <dt>Propietario</dt><dd>@(o.OwnerName ?? "— sin asignar —")</dd>
             <dt>Expiración</dt><dd>@(o.NoExpirationJustified ? "Sin vencimiento (justificado)" : Display.Date(o.ExpirationDate))</dd>
             <dt>Versión</dt><dd>@o.CurrentVersion</dd>
             @if (o.ThumbprintSha256 is not null)
@@ -183,21 +182,14 @@ else if (canRequest)
 @if (custodian)
 {
     <details class="pv-section">
-        <summary>Propietarios</summary>
-        <form asp-action="Owners" asp-route-id="@o.Id" method="post" class="pv-form">
+        <summary>Propietario</summary>
+        <form asp-action="Owner" asp-route-id="@o.Id" method="post" class="pv-form">
             <input type="hidden" name="ETag" value="@o.ETag" />
             <label>
-                Funcional
-                <input data-user-picker="own-f" placeholder="Buscar usuario…" />
-                <select id="own-f" name="FunctionalOwnerId" required>
-                    @if (o.FunctionalOwnerId is { } fid) { <option value="@fid">@o.FunctionalOwnerName</option> }
-                </select>
-            </label>
-            <label>
-                Técnico
-                <input data-user-picker="own-t" placeholder="Buscar usuario…" />
-                <select id="own-t" name="TechnicalOwnerId" required>
-                    @if (o.TechnicalOwnerId is { } tid) { <option value="@tid">@o.TechnicalOwnerName</option> }
+                Propietario
+                <input data-user-picker="own" placeholder="Buscar usuario…" />
+                <select id="own" name="OwnerId" required>
+                    @if (o.OwnerId is { } oid) { <option value="@oid">@o.OwnerName</option> }
                 </select>
             </label>
             <label class="pv-wide">Motivo <input name="Reason" minlength="5" maxlength="500" required /></label>

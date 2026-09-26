@@ -25,12 +25,11 @@ public sealed class ObjectAuthorizationTests
 {
     private static readonly Guid Area = Guid.NewGuid();
     private static readonly Guid OtherArea = Guid.NewGuid();
-    private static readonly Guid FunctionalOwner = Guid.NewGuid();
-    private static readonly Guid TechnicalOwner = Guid.NewGuid();
+    private static readonly Guid Owner = Guid.NewGuid();
 
     private static ObjectAuthorizationContext Context(bool viewerIsMember = false, bool groupActive = true, Guid? createdBy = null) => new(
         Guid.NewGuid(), "OBJ-000001", ObjectType.Secret, Criticality.Medium, Sensitivity.Confidential, LifecycleState.Active,
-        CustodyMode.Internal, true, Area, FunctionalOwner, TechnicalOwner, createdBy ?? Guid.NewGuid(), 1,
+        CustodyMode.Internal, true, Area, Owner, createdBy ?? Guid.NewGuid(), 1,
         [new ObjectGroupInfo(Guid.NewGuid(), "GRP-000001", "Pagos", groupActive, 2, viewerIsMember)], []);
 
     [Fact]
@@ -90,11 +89,12 @@ public sealed class ObjectAuthorizationTests
     }
 
     [Fact]
-    public void Only_technical_owner_among_owners_edits_the_value()
+    public void Owner_edits_the_value_and_changes_state_but_does_not_reassign_ownership_IMP62()
     {
-        Assert.True(ObjectAuthorizer.IsAllowed(Context(), new FakeUser(TechnicalOwner, OtherArea), ObjectOperation.EditValue));
-        Assert.False(ObjectAuthorizer.IsAllowed(Context(), new FakeUser(FunctionalOwner, OtherArea), ObjectOperation.EditValue));
-        Assert.True(ObjectAuthorizer.IsAllowed(Context(), new FakeUser(FunctionalOwner, OtherArea), ObjectOperation.ChangeState));
+        var owner = new FakeUser(Owner, OtherArea);
+        Assert.True(ObjectAuthorizer.IsAllowed(Context(), owner, ObjectOperation.EditValue));
+        Assert.True(ObjectAuthorizer.IsAllowed(Context(), owner, ObjectOperation.ChangeState));
+        Assert.False(ObjectAuthorizer.IsAllowed(Context(), owner, ObjectOperation.ManageOwners));
     }
 
     [Fact]

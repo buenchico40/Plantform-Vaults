@@ -49,7 +49,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
     }
 
     private static ManagedObject NewSecret(Guid owner, string name) => ManagedObject.Register(new ObjectRegistration(ObjectType.Secret, "ApiKey", name,
-        null, Criticality.Medium, Sensitivity.Confidential, DeploymentEnvironment.Development, DefaultArea, owner, owner, CustodyMode.Internal,
+        null, Criticality.Medium, Sensitivity.Confidential, DeploymentEnvironment.Development, DefaultArea, owner, CustodyMode.Internal,
         DateTime.UtcNow.AddDays(60), false, null), Guid.NewGuid());
 
     [Fact]

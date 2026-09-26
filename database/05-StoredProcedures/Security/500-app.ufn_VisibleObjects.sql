@@ -16,8 +16,7 @@ RETURN
     SELECT o.ObjectId
     FROM app.ManagedObject AS o
     WHERE @HasGlobalScope = 1
-       OR o.FunctionalOwnerId = @ViewerUserId
-       OR o.TechnicalOwnerId = @ViewerUserId
+       OR o.OwnerId = @ViewerUserId
        OR o.CreatedBy = @ViewerUserId
        OR EXISTS (
             SELECT 1

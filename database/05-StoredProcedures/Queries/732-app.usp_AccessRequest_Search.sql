@@ -20,7 +20,7 @@ BEGIN
          OR (@Scope = 'All')
          OR (@Scope = 'PendingForMe' AND r.State = 'Pending' AND r.RequesterId <> @ViewerUserId AND (
                 (r.ApproverKind = 'Security' AND @ViewerIsSecurity = 1)
-             OR (r.ApproverKind = 'Owner' AND (o.FunctionalOwnerId = @ViewerUserId OR o.TechnicalOwnerId = @ViewerUserId))
+             OR (r.ApproverKind = 'Owner' AND o.OwnerId = @ViewerUserId)
              OR (r.ApproverKind = 'GroupPeer' AND EXISTS (
                     SELECT 1 FROM app.ObjectGroup AS og
                     JOIN app.SecurityGroup AS g ON g.GroupId = og.GroupId AND g.IsActive = 1

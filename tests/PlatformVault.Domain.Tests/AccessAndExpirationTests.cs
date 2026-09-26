@@ -14,7 +14,7 @@ public sealed class AccessRulesTests
     private static ManagedObject ActiveSecret(Criticality criticality, Sensitivity sensitivity)
     {
         var obj = ManagedObject.Register(new ObjectRegistration(ObjectType.Secret, "ApiKey", "x", null, criticality, sensitivity,
-            DeploymentEnvironment.Production, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), CustodyMode.Internal, Now.AddDays(90), false, null),
+            DeploymentEnvironment.Production, Guid.NewGuid(), Guid.NewGuid(), CustodyMode.Internal, Now.AddDays(90), false, null),
             Guid.NewGuid());
         obj.HasPayload = true;
         obj.ChangeState(LifecycleState.Active, new GroupCoverage(1, 2));
@@ -124,17 +124,17 @@ public sealed class ExpirationRulesTests
         Assert.Null(ExpirationEvaluator.Evaluate(Now.AddDays(200), Criticality.Medium, Default, Now));
 
     [Fact]
-    public void Expired_objects_raise_a_daily_critical_alert_up_to_N3_RN068_RN071()
+    public void Expired_objects_raise_a_daily_critical_alert_up_to_N2_RN068_RN071_IMP62()
     {
         var alert = ExpirationEvaluator.Evaluate(Now.AddDays(-2), Criticality.Low, Default, Now);
         Assert.Equal("EXP-20260925", alert!.AlertKey);
         Assert.Equal(AlertSeverity.Critical, alert.Severity);
-        Assert.Equal((byte)3, alert.InitialLevel);
+        Assert.Equal((byte)2, alert.InitialLevel);
     }
 
     [Fact]
-    public void Critical_objects_within_30_days_go_to_N3_RN071() =>
-        Assert.Equal((byte)3, ExpirationEvaluator.Evaluate(Now.AddDays(10), Criticality.Critical, Default, Now)!.InitialLevel);
+    public void Critical_objects_within_30_days_go_to_N2_RN071_IMP62() =>
+        Assert.Equal((byte)2, ExpirationEvaluator.Evaluate(Now.AddDays(10), Criticality.Critical, Default, Now)!.InitialLevel);
 
     [Fact]
     public void Critical_and_high_keep_30_7_1_RN061()
@@ -163,10 +163,10 @@ public sealed class ExpirationRulesTests
     }
 
     [Fact]
-    public void Escalation_stops_at_level_4_RN069()
+    public void Escalation_stops_at_level_3_RN069_IMP62()
     {
         Assert.Equal((byte)2, EscalationPolicy.NextLevel(1));
-        Assert.Equal((byte)4, EscalationPolicy.NextLevel(4));
+        Assert.Equal((byte)3, EscalationPolicy.NextLevel(3));
         Assert.Equal(TimeSpan.FromHours(72), EscalationPolicy.WindowFor(AlertSeverity.Medium));
     }
 }

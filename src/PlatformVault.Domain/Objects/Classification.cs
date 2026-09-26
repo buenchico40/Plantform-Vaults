@@ -61,10 +61,15 @@ public enum CustodyMode
     MetadataOnly,
 }
 
+/// <summary>
+/// Rol registrado en el historial de propiedad. IMP-62: el objeto tiene un único propietario (<see cref="Owner"/>);
+/// Functional y Technical solo aparecen en el historial anterior a la unificación.
+/// </summary>
 public enum OwnerRole
 {
     [JsonStringEnumMemberName("Funcional")] Functional,
     [JsonStringEnumMemberName("Técnico")] Technical,
+    [JsonStringEnumMemberName("Propietario")] Owner,
 }
 
 /// <summary>Forma del valor sensible custodiado (IMP-30).</summary>

@@ -6,7 +6,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT o.ObjectId, o.Code, o.Name, o.ObjectType, o.Criticality, o.Sensitivity, o.Environment, o.ExpirationDate,
-           o.FunctionalOwnerId, o.TechnicalOwnerId, o.AreaId
+           o.OwnerId, o.AreaId
     FROM app.ManagedObject AS o
     WHERE o.ExpirationDate IS NOT NULL AND o.LifecycleState IN ('Active', 'Suspended')
       AND o.ExpirationDate <= DATEADD(DAY, @HorizonDays, @NowUtc);

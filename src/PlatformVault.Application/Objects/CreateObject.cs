@@ -18,8 +18,7 @@ public sealed record CreateObjectCommand(
     Sensitivity Sensitivity,
     DeploymentEnvironment Environment,
     Guid AreaId,
-    Guid? FunctionalOwnerId,
-    Guid? TechnicalOwnerId,
+    Guid? OwnerId,
     CustodyMode CustodyMode,
     DateTime? ExpirationDate,
     bool NoExpirationJustified,
@@ -49,7 +48,7 @@ public sealed class CreateObjectHandler(
         if (user.AreaId != command.AreaId)
             throw new ForbiddenFailure("Solo puede registrar objetos en su área.");
 
-        await owners.ValidateAsync(command.FunctionalOwnerId, command.TechnicalOwnerId, ct);
+        await owners.ValidateAsync(command.OwnerId, ct);
 
         var definition = ObjectCatalog.Get(command.Type, command.Subtype);
         var prepared = PayloadPreparation.Prepare(command.Value, command.Type, definition.PayloadKind, certificates);
@@ -68,8 +67,8 @@ public sealed class CreateObjectHandler(
             }
 
             var obj = ManagedObject.Register(new ObjectRegistration(command.Type, command.Subtype, command.Name, command.Description,
-                command.Criticality, command.Sensitivity, command.Environment, command.AreaId, command.FunctionalOwnerId,
-                command.TechnicalOwnerId, command.CustodyMode, expiration, command.NoExpirationJustified, attributes, thumbprint), Guid.NewGuid());
+                command.Criticality, command.Sensitivity, command.Environment, command.AreaId, command.OwnerId, command.CustodyMode,
+                expiration, command.NoExpirationJustified, attributes, thumbprint), Guid.NewGuid());
 
             if (prepared.Bytes is not null)
             {
@@ -119,13 +118,12 @@ public sealed class CreateObjectHandler(
 /// <summary>Valida que los propietarios existan, estén activos y no tengan roles exclusivos (RN-087, §4.3).</summary>
 public sealed class OwnerValidator(IUserDirectory users)
 {
-    public async Task ValidateAsync(Guid? functionalOwnerId, Guid? technicalOwnerId, CancellationToken ct)
+    public async Task ValidateAsync(Guid? ownerId, CancellationToken ct)
     {
-        foreach (var id in new[] { functionalOwnerId, technicalOwnerId }.OfType<Guid>().Distinct())
-        {
-            var owner = await users.GetAsync(id, ct)
-                ?? throw new DomainException(DomainErrors.OwnersRequired, "El propietario indicado no existe.");
-            SegregationOfDuties.EnsureCanOwn(owner.Roles, owner.IsActive);
-        }
+        if (ownerId is not { } id)
+            return;
+        var owner = await users.GetAsync(id, ct)
+            ?? throw new DomainException(DomainErrors.OwnersRequired, "El propietario indicado no existe.");
+        SegregationOfDuties.EnsureCanOwn(owner.Roles, owner.IsActive);
     }
 }

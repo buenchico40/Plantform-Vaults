@@ -16,8 +16,7 @@ BEGIN
         Sensitivity           varchar(15)      NOT NULL,
         Environment           varchar(20)      NOT NULL,
         AreaId                uniqueidentifier NOT NULL,
-        FunctionalOwnerId     uniqueidentifier NULL,
-        TechnicalOwnerId      uniqueidentifier NULL,
+        OwnerId               uniqueidentifier NULL,
         LifecycleState        varchar(15)      NOT NULL,
         CustodyMode           varchar(15)      NOT NULL,
         HasPayload            bit              NOT NULL CONSTRAINT DF_ManagedObject_HasPayload DEFAULT (0),
@@ -32,5 +31,30 @@ BEGIN
         ModifiedBy            uniqueidentifier NULL,
         RowVer                rowversion       NOT NULL
     );
+END
+GO
+
+-- IMP-62: migración de bases existentes de dos propietarios (funcional y técnico) a un propietario único.
+-- Se conserva el técnico y, si falta, el funcional. Se ejecuta una sola vez: mientras exista FunctionalOwnerId.
+IF COL_LENGTH(N'app.ManagedObject', N'FunctionalOwnerId') IS NOT NULL AND COL_LENGTH(N'app.ManagedObject', N'OwnerId') IS NULL
+    ALTER TABLE app.ManagedObject ADD OwnerId uniqueidentifier NULL;
+GO
+IF COL_LENGTH(N'app.ManagedObject', N'FunctionalOwnerId') IS NOT NULL
+BEGIN
+    SET XACT_ABORT ON;
+    BEGIN TRANSACTION;
+    EXEC (N'UPDATE app.ManagedObject SET OwnerId = COALESCE(TechnicalOwnerId, FunctionalOwnerId);');
+    -- Alertas abiertas: de cuatro a tres niveles (N1 y N2 → N1, N3 → N2, N4 → N3).
+    IF OBJECT_ID(N'app.Alert', N'U') IS NOT NULL
+        EXEC (N'UPDATE app.Alert SET EscalationLevel = CASE WHEN EscalationLevel <= 2 THEN 1 ELSE EscalationLevel - 1 END
+                WHERE State IN (''Open'', ''Escalated'');');
+    IF OBJECT_ID(N'app.FK_ManagedObject_FunctionalOwner') IS NOT NULL
+        ALTER TABLE app.ManagedObject DROP CONSTRAINT FK_ManagedObject_FunctionalOwner;
+    IF OBJECT_ID(N'app.FK_ManagedObject_TechnicalOwner') IS NOT NULL
+        ALTER TABLE app.ManagedObject DROP CONSTRAINT FK_ManagedObject_TechnicalOwner;
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ManagedObject_Owners' AND object_id = OBJECT_ID(N'app.ManagedObject'))
+        DROP INDEX IX_ManagedObject_Owners ON app.ManagedObject;
+    EXEC (N'ALTER TABLE app.ManagedObject DROP COLUMN FunctionalOwnerId, TechnicalOwnerId;');
+    COMMIT TRANSACTION;
 END
 GO

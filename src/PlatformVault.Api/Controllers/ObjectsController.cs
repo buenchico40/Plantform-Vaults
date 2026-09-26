@@ -17,8 +17,7 @@ public sealed record CreateObjectRequest(
     [Required] Sensitivity Sensitivity,
     [Required] DeploymentEnvironment Environment,
     [Required] Guid AreaId,
-    Guid? FunctionalOwnerId,
-    Guid? TechnicalOwnerId,
+    Guid? OwnerId,
     CustodyMode CustodyMode,
     DateTime? ExpirationDate,
     bool NoExpirationJustified,
@@ -41,7 +40,7 @@ public sealed record ReclassifyRequest([Required] Criticality Criticality, [Requ
 
 public sealed record ChangeStateRequest([Required] StateAction Action, [Required, MaxLength(500)] string Reason);
 
-public sealed record AssignOwnersRequest([Required] Guid FunctionalOwnerId, [Required] Guid TechnicalOwnerId,
+public sealed record AssignOwnerRequest([Required] Guid OwnerId,
     [Required, MaxLength(500)] string Reason);
 
 public sealed record SetGroupsRequest([Required] IReadOnlyList<Guid> GroupIds, [Required, MaxLength(500)] string Reason);
@@ -105,7 +104,7 @@ public sealed class ObjectsController : ApiControllerBase
             CertificatePassword = request.CertificateContainerPassword,
         };
         var result = await handler.HandleAsync(new CreateObjectCommand(request.Type, request.Subtype, request.Name, request.Description,
-            request.Criticality, request.Sensitivity, request.Environment, request.AreaId, request.FunctionalOwnerId, request.TechnicalOwnerId,
+            request.Criticality, request.Sensitivity, request.Environment, request.AreaId, request.OwnerId,
             request.CustodyMode, request.ExpirationDate, request.NoExpirationJustified, request.Attributes, value), ct);
         SetETag(result.ETag);
         return CreatedAtAction(nameof(Get), new { objectId = result.Id }, result);
@@ -140,9 +139,9 @@ public sealed class ObjectsController : ApiControllerBase
     }
 
     [HttpPut("{objectId:guid}/owners")]
-    public Task<ObjectWriteResult> AssignOwners(Guid objectId, AssignOwnersRequest request,
-        [FromServices] ICommandHandler<AssignOwnersCommand, ObjectWriteResult> handler, CancellationToken ct) =>
-        Write(handler.HandleAsync(new AssignOwnersCommand(objectId, IfMatch, request.FunctionalOwnerId, request.TechnicalOwnerId, request.Reason), ct));
+    public Task<ObjectWriteResult> AssignOwner(Guid objectId, AssignOwnerRequest request,
+        [FromServices] ICommandHandler<AssignOwnerCommand, ObjectWriteResult> handler, CancellationToken ct) =>
+        Write(handler.HandleAsync(new AssignOwnerCommand(objectId, IfMatch, request.OwnerId, request.Reason), ct));
 
     [HttpPut("{objectId:guid}/groups")]
     public Task<ObjectWriteResult> SetGroups(Guid objectId, SetGroupsRequest request,

@@ -22,7 +22,7 @@ BEGIN
                 WHERE og.ObjectId = @ObjectId))
          OR (@ApproverKind = 'Owner' AND EXISTS (
                 SELECT 1 FROM app.ManagedObject AS o
-                WHERE o.ObjectId = @ObjectId AND (o.FunctionalOwnerId = u.UserId OR o.TechnicalOwnerId = u.UserId)))
+                WHERE o.ObjectId = @ObjectId AND o.OwnerId = u.UserId))
           );
 END
 GO

@@ -11,7 +11,7 @@ public sealed class ObjectRulesTests
 
     private static ObjectRegistration Secret(Criticality criticality = Criticality.Medium, Sensitivity sensitivity = Sensitivity.Confidential,
         string name = "api-pagos", CustodyMode custody = CustodyMode.Internal, DateTime? expiration = null) =>
-        new(ObjectType.Secret, "ApiKey", name, null, criticality, sensitivity, DeploymentEnvironment.Production, Area, Owner, Owner,
+        new(ObjectType.Secret, "ApiKey", name, null, criticality, sensitivity, DeploymentEnvironment.Production, Area, Owner,
             custody, expiration ?? DateTime.UtcNow.AddDays(90), false, null);
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class ObjectRulesTests
     public void Swift_certificates_must_be_critical_RN019()
     {
         var data = new ObjectRegistration(ObjectType.Certificate, "Swift", "swift-bic", null, Criticality.High, Sensitivity.Restricted,
-            DeploymentEnvironment.Production, Area, Owner, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(300), false, null);
+            DeploymentEnvironment.Production, Area, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(300), false, null);
         Assert.Throws<DomainException>(() => ManagedObject.Register(data, Guid.NewGuid()));
     }
 
@@ -48,7 +48,7 @@ public sealed class ObjectRulesTests
     public void Credentials_require_target_system_and_account_RN013()
     {
         var data = new ObjectRegistration(ObjectType.Credential, "Database", "db-pagos", null, Criticality.High, Sensitivity.Confidential,
-            DeploymentEnvironment.Production, Area, Owner, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(90), false,
+            DeploymentEnvironment.Production, Area, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(90), false,
             new Dictionary<string, string> { ["targetSystem"] = "sql01" });
         var ex = Assert.Throws<DomainException>(() => ManagedObject.Register(data, Guid.NewGuid()));
         Assert.Contains("accountName", ex.Message, StringComparison.Ordinal);
@@ -69,9 +69,9 @@ public sealed class ObjectRulesTests
     }
 
     [Fact]
-    public void Activation_requires_owners_RN087()
+    public void Activation_requires_an_owner_RN087()
     {
-        var obj = ManagedObject.Register(Secret() with { FunctionalOwnerId = null }, Guid.NewGuid());
+        var obj = ManagedObject.Register(Secret() with { OwnerId = null }, Guid.NewGuid());
         var ex = Assert.Throws<DomainException>(() => obj.ChangeState(LifecycleState.Active, new GroupCoverage(1, 3)));
         Assert.Equal(DomainErrors.OwnersRequired, ex.Code);
     }
@@ -125,7 +125,7 @@ public sealed class ObjectRulesTests
     public void Certificate_expiration_cannot_be_edited_RN016()
     {
         var data = new ObjectRegistration(ObjectType.Certificate, "SslTls", "web", null, Criticality.High, Sensitivity.Restricted,
-            DeploymentEnvironment.Production, Area, Owner, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(200), false, null, new string('A', 64));
+            DeploymentEnvironment.Production, Area, Owner, CustodyMode.Internal, DateTime.UtcNow.AddDays(200), false, null, new string('A', 64));
         var obj = ManagedObject.Register(data, Guid.NewGuid());
         Assert.Throws<DomainException>(() => obj.UpdateMetadata(new MetadataChange("web", null, DateTime.UtcNow.AddDays(500), false, null)));
     }

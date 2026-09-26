@@ -17,8 +17,8 @@ BEGIN
 
     WITH Filtered AS (
         SELECT o.ObjectId, o.Code, o.ObjectType, o.Subtype, o.Name, o.Description, o.Criticality, o.Sensitivity, o.Environment,
-           o.AreaId, a.Name AS AreaName, o.FunctionalOwnerId, fo.DisplayName AS FunctionalOwnerName,
-           o.TechnicalOwnerId, tec.DisplayName AS TechnicalOwnerName, o.LifecycleState, o.CustodyMode, o.HasPayload,
+           o.AreaId, a.Name AS AreaName, o.OwnerId, ow.DisplayName AS OwnerName,
+           o.LifecycleState, o.CustodyMode, o.HasPayload,
            o.ExpirationDate, o.NoExpirationJustified, o.Thumbprint, o.CurrentVersion, o.CreatedAtUtc, o.CreatedBy,
            o.ModifiedAtUtc, o.ModifiedBy, o.RowVer,
                CASE WHEN o.ExpirationDate IS NULL THEN 'NoExpiration'
@@ -28,8 +28,7 @@ BEGIN
         FROM app.ManagedObject AS o
         JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId
         JOIN app.Area AS a ON a.AreaId = o.AreaId
-    LEFT JOIN [identity].[User] AS fo ON fo.UserId = o.FunctionalOwnerId
-    LEFT JOIN [identity].[User] AS tec ON tec.UserId = o.TechnicalOwnerId
+        LEFT JOIN [identity].[User] AS ow ON ow.UserId = o.OwnerId
         WHERE (@Pattern IS NULL OR o.Name LIKE @Pattern OR o.Code LIKE @Pattern OR o.Subtype LIKE @Pattern)
           AND (@ObjectType IS NULL OR o.ObjectType = @ObjectType)
           AND (@Criticality IS NULL OR o.Criticality = @Criticality)
@@ -37,8 +36,8 @@ BEGIN
           AND (@Environment IS NULL OR o.Environment = @Environment)
           AND (@LifecycleState IS NULL OR o.LifecycleState = @LifecycleState)
           AND (@AreaId IS NULL OR o.AreaId = @AreaId)
-          AND (@OwnerId IS NULL OR o.FunctionalOwnerId = @OwnerId OR o.TechnicalOwnerId = @OwnerId)
-          AND (@WithoutOwner = 0 OR o.FunctionalOwnerId IS NULL OR o.TechnicalOwnerId IS NULL)
+          AND (@OwnerId IS NULL OR o.OwnerId = @OwnerId)
+          AND (@WithoutOwner = 0 OR o.OwnerId IS NULL)
           AND (@ExpiresBeforeUtc IS NULL OR o.ExpirationDate <= @ExpiresBeforeUtc)
           AND (@ExpiresAfterUtc IS NULL OR o.ExpirationDate >= @ExpiresAfterUtc)
           AND (@Subtype IS NULL OR o.Subtype = @Subtype)

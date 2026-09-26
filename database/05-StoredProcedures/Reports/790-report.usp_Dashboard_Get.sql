@@ -14,7 +14,7 @@ BEGIN
                 WHEN o.ExpirationDate <= @NowUtc THEN 'Expired'
                 WHEN o.ExpirationDate <= DATEADD(DAY, @ExpiringSoonDays, @NowUtc) THEN 'ExpiringSoon'
                 ELSE 'Valid' END,
-           CASE WHEN o.FunctionalOwnerId IS NULL OR o.TechnicalOwnerId IS NULL THEN 1 ELSE 0 END
+           CASE WHEN o.OwnerId IS NULL THEN 1 ELSE 0 END
     FROM app.ManagedObject AS o
     JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId;
 

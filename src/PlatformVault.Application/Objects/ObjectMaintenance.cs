@@ -26,7 +26,7 @@ public enum StateAction
 
 public sealed record ChangeObjectStateCommand(Guid ObjectId, string ETag, StateAction Action, string Reason);
 
-public sealed record AssignOwnersCommand(Guid ObjectId, string ETag, Guid FunctionalOwnerId, Guid TechnicalOwnerId, string Reason);
+public sealed record AssignOwnerCommand(Guid ObjectId, string ETag, Guid OwnerId, string Reason);
 
 public sealed record SetObjectGroupsCommand(Guid ObjectId, string ETag, IReadOnlyList<Guid> GroupIds, string Reason);
 
@@ -160,28 +160,27 @@ public sealed class ChangeObjectStateHandler(ICurrentUser user, IClock clock, Ob
     }
 }
 
-/// <summary>US-013: asignación de propietarios con historial (RN-087 a RN-089).</summary>
-public sealed class AssignOwnersHandler(ICurrentUser user, IClock clock, ObjectCommandContext loader, IObjectRepository objects,
-    OwnerValidator owners, IUnitOfWork unitOfWork, AuditLogger audit, Notifier notifier) : ICommandHandler<AssignOwnersCommand, ObjectWriteResult>
+/// <summary>US-013: asignación del propietario con historial (RN-087, RN-089, IMP-62).</summary>
+public sealed class AssignOwnerHandler(ICurrentUser user, IClock clock, ObjectCommandContext loader, IObjectRepository objects,
+    OwnerValidator owners, IUnitOfWork unitOfWork, AuditLogger audit, Notifier notifier) : ICommandHandler<AssignOwnerCommand, ObjectWriteResult>
 {
-    public async Task<ObjectWriteResult> HandleAsync(AssignOwnersCommand command, CancellationToken ct)
+    public async Task<ObjectWriteResult> HandleAsync(AssignOwnerCommand command, CancellationToken ct)
     {
         var reason = UpdateObjectHandler.RequireReason(command.Reason);
         var (_, obj, rowVer) = await loader.LoadAsync(command.ObjectId, command.ETag, ObjectOperation.ManageOwners, ct);
-        await owners.ValidateAsync(command.FunctionalOwnerId, command.TechnicalOwnerId, ct);
-        obj.AssignOwners(command.FunctionalOwnerId, command.TechnicalOwnerId);
+        await owners.ValidateAsync(command.OwnerId, ct);
+        obj.AssignOwner(command.OwnerId);
 
         await using var tx = await unitOfWork.BeginAsync(ct);
-        var result = await objects.SetOwnersAsync(obj.ObjectId, command.FunctionalOwnerId, command.TechnicalOwnerId, rowVer, user.UserId,
+        var result = await objects.SetOwnerAsync(obj.ObjectId, command.OwnerId, rowVer, user.UserId,
             clock.UtcNow, reason, ct);
         await audit.SuccessAsync(AuditActions.ObjectOwnersChanged, "ManagedObject", obj.ObjectId.ToString(), new
         {
             code = obj.Code,
-            functionalOwnerId = command.FunctionalOwnerId,
-            technicalOwnerId = command.TechnicalOwnerId,
+            ownerId = command.OwnerId,
             reason,
         }, ct);
-        await notifier.NotifySecurityAsync(obj.IsCritical, obj.Code, "cambio de propietarios", ct);
+        await notifier.NotifySecurityAsync(obj.IsCritical, obj.Code, "cambio de propietario", ct);
         await tx.CommitAsync(ct);
         return result;
     }

@@ -84,10 +84,8 @@ public class ObjectSummary
     public string Environment { get; set; } = "";
     public Guid AreaId { get; set; }
     public string AreaName { get; set; } = "";
-    public Guid? FunctionalOwnerId { get; set; }
-    public string? FunctionalOwnerName { get; set; }
-    public Guid? TechnicalOwnerId { get; set; }
-    public string? TechnicalOwnerName { get; set; }
+    public Guid? OwnerId { get; set; }
+    public string? OwnerName { get; set; }
     public string LifecycleState { get; set; } = "";
     public string ExpirationStatus { get; set; } = "";
     public DateTime? ExpirationDate { get; set; }

@@ -66,7 +66,7 @@ public sealed class ObjectAuthorizer(IObjectRepository objects, ICurrentUser use
             ObjectOperation.View => IsVisible(context, user),
             ObjectOperation.EditMetadata => custodian || owner,
             ObjectOperation.Reclassify => custodian || owner || user.IsInRole(SystemRoles.Security),
-            ObjectOperation.EditValue => custodian || context.TechnicalOwnerId == user.UserId,
+            ObjectOperation.EditValue => custodian || owner,
             ObjectOperation.ChangeState => custodian || owner,
             ObjectOperation.ManageOwners => custodian,
             ObjectOperation.ManageGroups => custodian || owner,

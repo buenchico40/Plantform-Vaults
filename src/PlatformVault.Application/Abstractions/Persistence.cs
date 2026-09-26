@@ -36,7 +36,7 @@ public interface IObjectRepository
         string changedFieldsJson, bool resolveOpenAlerts, CancellationToken ct);
     Task<StateChangeResult> ChangeStateAsync(Guid objectId, LifecycleState newState, byte[] expectedRowVer, Guid actorId, DateTime nowUtc,
         string reason, CancellationToken ct);
-    Task<ObjectWriteResult> SetOwnersAsync(Guid objectId, Guid functionalOwnerId, Guid technicalOwnerId, byte[] expectedRowVer, Guid actorId,
+    Task<ObjectWriteResult> SetOwnerAsync(Guid objectId, Guid ownerId, byte[] expectedRowVer, Guid actorId,
         DateTime nowUtc, string reason, CancellationToken ct);
     Task<ObjectWriteResult> SetGroupsAsync(Guid objectId, IReadOnlyCollection<Guid> groupIds, byte[] expectedRowVer, Guid actorId, DateTime nowUtc,
         string reason, CancellationToken ct);

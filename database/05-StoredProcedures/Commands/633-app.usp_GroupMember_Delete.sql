@@ -20,8 +20,7 @@ BEGIN
     SELECT og.ObjectId FROM app.ObjectGroup AS og
     JOIN app.ManagedObject AS o ON o.ObjectId = og.ObjectId
     WHERE og.GroupId = @GroupId
-      AND ISNULL(o.FunctionalOwnerId, '00000000-0000-0000-0000-000000000000') <> @UserId
-      AND ISNULL(o.TechnicalOwnerId, '00000000-0000-0000-0000-000000000000') <> @UserId
+      AND ISNULL(o.OwnerId, '00000000-0000-0000-0000-000000000000') <> @UserId
       AND NOT EXISTS (SELECT 1 FROM app.ObjectGroup AS og2
                       JOIN app.SecurityGroup AS g2 ON g2.GroupId = og2.GroupId AND g2.IsActive = 1
                       JOIN app.GroupMember AS gm2 ON gm2.GroupId = og2.GroupId AND gm2.UserId = @UserId

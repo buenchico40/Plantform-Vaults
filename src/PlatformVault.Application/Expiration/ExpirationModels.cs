@@ -28,7 +28,7 @@ public sealed record AlertRecord(Guid AlertId, Guid ObjectId, string AlertKey, A
 public sealed record AlertSearchCriteria(AlertState? State, AlertSeverity? Severity, bool OnlyOpen, Guid? ObjectId = null);
 
 public sealed record MonitoringCandidate(Guid ObjectId, string Code, string Name, ObjectType ObjectType, Criticality Criticality,
-    DateTime ExpirationDate, Guid? FunctionalOwnerId, Guid? TechnicalOwnerId);
+    DateTime ExpirationDate, Guid? OwnerId);
 
 public sealed record ExpirationPolicyView(Guid Id, string Name, ObjectType? AppliesToType, Criticality? AppliesToCriticality,
     IReadOnlyList<int> ThresholdDays, bool IsActive, DateTime ModifiedAt);

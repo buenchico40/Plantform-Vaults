@@ -44,9 +44,9 @@ public static class ExpirationEvaluator
         _ => AlertSeverity.Low,
     };
 
-    /// <summary>RN-071: los Críticos a 30 días o menos y todo expirado se notifican directamente hasta N3.</summary>
+    /// <summary>RN-071: los Críticos a 30 días o menos y todo expirado se notifican directamente hasta N2 (el jefe y los Responsables; IMP-62).</summary>
     public static byte InitialLevel(Criticality criticality, int daysRemaining, bool expired) =>
-        expired || (criticality == Criticality.Critical && daysRemaining <= 30) ? (byte)3 : (byte)1;
+        expired || (criticality == Criticality.Critical && daysRemaining <= 30) ? (byte)2 : (byte)1;
 
     /// <summary>La política más específica gana: tipo + criticidad &gt; tipo &gt; criticidad &gt; global (RN-062).</summary>
     public static ExpirationPolicyDefinition? SelectPolicy(IEnumerable<ExpirationPolicyDefinition> policies, ObjectType type, Criticality criticality)

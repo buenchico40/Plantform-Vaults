@@ -786,9 +786,9 @@ paths:
       - $ref: "#/components/parameters/ObjectIdParam"
     put:
       tags: [ManagedObjects]
-      operationId: assignOwners
-      summary: Asignar o reasignar el Propietario Funcional y/o Técnico
-      description: "US-013. RN-087, RN-088 (objetos críticos: personas distintas), RN-089."
+      operationId: assignOwner
+      summary: Asignar o reasignar el Propietario del objeto
+      description: "US-013. RN-087, RN-089. IMP-62: el objeto tiene un único propietario (la ruta conserva el plural por compatibilidad)."
       x-permission: Modificar
       parameters:
         - $ref: "#/components/parameters/IfMatchHeader"
@@ -796,7 +796,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AssignOwnersRequest" }
+            schema: { $ref: "#/components/schemas/AssignOwnerRequest" }
       responses:
         "200":
           description: Propietarios actualizados
@@ -2499,7 +2499,8 @@ components:
       enum: [Internal, MetadataOnly]
     OwnerRole:
       type: string
-      enum: [Funcional, Técnico]
+      enum: [Funcional, Técnico, Propietario]
+      description: "IMP-62: los cambios nuevos se registran como Propietario; Funcional y Técnico solo aparecen en el historial anterior."
     RoleName:
       type: string
       enum: [Administrador, Custodio, Propietario, Auditor, Seguridad]
@@ -2631,7 +2632,7 @@ components:
         displayName: { type: string, maxLength: 200 }
         email: { type: string, format: email, maxLength: 256, nullable: true }
         areaId: { type: string, format: uuid, nullable: true }
-        managerUserId: { type: string, format: uuid, nullable: true, description: Responsable jerárquico para el escalamiento N3 (IMP-15) }
+        managerUserId: { type: string, format: uuid, nullable: true, description: Responsable jerárquico para el escalamiento N2 (IMP-15, IMP-62) }
         isActive: { type: boolean }
 
     SubtypeDefinition:
@@ -2786,8 +2787,7 @@ components:
           example: { targetSystem: srv-pagos-db, accountName: svc_pagos }
         hasValue: { type: boolean, readOnly: true, description: El objeto custodia un valor cifrado (nunca se devuelve aquí) }
         eTag: { type: string, readOnly: true, description: Versión de fila para `If-Match` (IMP-44) }
-        functionalOwnerId: { type: string, format: uuid, nullable: true }
-        technicalOwnerId: { type: string, format: uuid, nullable: true }
+        ownerId: { type: string, format: uuid, nullable: true, description: Propietario único del objeto (IMP-62) }
         lifecycleState: { $ref: "#/components/schemas/LifecycleState", readOnly: true }
         expirationStatus: { $ref: "#/components/schemas/ExpirationStatus", readOnly: true }
         expirationDate: { type: string, format: date-time, nullable: true }
@@ -2964,12 +2964,11 @@ components:
           x-not-supported-in: "1B"
         reason: { type: string, minLength: 5, maxLength: 500 }
 
-    AssignOwnersRequest:
+    AssignOwnerRequest:
       type: object
-      required: [functionalOwnerId, technicalOwnerId, reason]
+      required: [ownerId, reason]
       properties:
-        functionalOwnerId: { type: string, format: uuid }
-        technicalOwnerId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
         reason: { type: string, minLength: 5, maxLength: 500, description: "Motivo del cambio (RN-089, historial)" }
 
     ObjectWriteResult:
@@ -3140,7 +3139,7 @@ components:
             type: object
             properties:
               level: { type: integer }
-              approverKind: { type: string, enum: [FunctionalOwner, TechnicalOwner, AreaCustodian, SecurityGroupPeer, Security] }
+              approverKind: { type: string, enum: [Owner, AreaCustodian, SecurityGroupPeer, Security] }
         maxDurationMinutes: { type: integer }
         allowJit: { type: boolean }
         status: { type: string, enum: [PendingApproval, Active, Superseded] }

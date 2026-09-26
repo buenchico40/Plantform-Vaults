@@ -171,9 +171,9 @@ function New-Object2([string] $key, [string] $creator, [hashtable] $body, $group
     Write-Host "  $($o.code) $($body.name)"
 }
 function Base([string] $type, [string] $subtype, [string] $name, [string] $criticality, [string] $sensitivity, [string] $area,
-    [string] $functional, [string] $technical, [double] $days) {
+    [string] $owner, [double] $days) {
     $b = @{ type = $type; subtype = $subtype; name = $name; criticality = $criticality; sensitivity = $sensitivity; environment = 'Producción';
-        areaId = $areas[$area]; functionalOwnerId = $users[$functional]; technicalOwnerId = $users[$technical]; custodyMode = 'Internal' }
+        areaId = $areas[$area]; ownerId = $users[$owner]; custodyMode = 'Internal' }
     if ($days -ne 0) { $b.expirationDate = Iso $days } else { $b.noExpirationJustified = $true }
     return $b
 }
@@ -181,78 +181,78 @@ function Base([string] $type, [string] $subtype, [string] $name, [string] $criti
 Write-Host 'Objetos...'
 $pfxPass = New-RandomText 12
 # --- Tecnología (custodio.maria)
-$b = Base 'Secret' 'ApiKey' 'api-key-switch-transaccional' 'Crítico' 'Restringida' 'TI' 'custodio.maria' 'operador.jose' 20
+$b = Base 'Secret' 'ApiKey' 'api-key-switch-transaccional' 'Crítico' 'Restringida' 'TI' 'operador.jose' 20
 $b.description = 'API Key del switch transaccional de pagos'; $b.initialValue = 'sk_demo_' + (New-RandomText 24)
 New-Object2 'switch' 'custodio.maria' $b @($gPagos) @('Activate')
 
-$b = Base 'Credential' 'Database' 'sql-core-bancario-svc' 'Alto' 'Confidencial' 'TI' 'custodio.maria' 'operador.carla' 45
+$b = Base 'Credential' 'Database' 'sql-core-bancario-svc' 'Alto' 'Confidencial' 'TI' 'operador.carla' 45
 $b.attributes = @{ targetSystem = 'sqlcore01.banco-demo.local'; accountName = 'svc_core_app'; authenticationType = 'SQL' }; $b.initialValue = New-RandomText 18
 New-Object2 'sqlcore' 'custodio.maria' $b @($gInfra) @('Activate')
 
-$b = Base 'Certificate' 'SslTls' 'portal-web-banco' 'Alto' 'Restringida' 'TI' 'custodio.maria' 'operador.jose' 0
+$b = Base 'Certificate' 'SslTls' 'portal-web-banco' 'Alto' 'Restringida' 'TI' 'operador.jose' 0
 $b.Remove('noExpirationJustified'); $b.certificateFileBase64 = New-Pfx 'portal.banco-demo.local' 12 $pfxPass; $b.certificateContainerPassword = $pfxPass
 New-Object2 'portal' 'custodio.maria' $b @($gInfra) @('Activate')
 
-$b = Base 'Certificate' 'Swift' 'swift-bic-produccion' 'Crítico' 'Restringida' 'TI' 'custodio.maria' 'operador.carla' 0
+$b = Base 'Certificate' 'Swift' 'swift-bic-produccion' 'Crítico' 'Restringida' 'TI' 'operador.carla' 0
 $b.Remove('noExpirationJustified'); $b.certificateFileBase64 = New-Pfx 'swift.banco-demo.local' 95 $pfxPass; $b.certificateContainerPassword = $pfxPass
 New-Object2 'swift' 'custodio.maria' $b @($gPagos) @('Activate')
 
 $key = New-Object byte[] 32; $rng.GetBytes($key)
-$b = Base 'CryptographicKey' 'Symmetric' 'llave-tokenizacion-tarjetas' 'Crítico' 'Restringida' 'TI' 'custodio.maria' 'operador.jose' 300
+$b = Base 'CryptographicKey' 'Symmetric' 'llave-tokenizacion-tarjetas' 'Crítico' 'Restringida' 'TI' 'operador.jose' 300
 $b.attributes = @{ algorithm = 'AES'; keyLength = '256'; keyUsage = 'Encrypt, Decrypt' }; $b.keyMaterialBase64 = [Convert]::ToBase64String($key)
 New-Object2 'tokenizacion' 'custodio.maria' $b @($gPagos) @('Activate')
 
-$b = Base 'ServiceAccount' 'ServicePrincipal' 'sp-conciliacion-batch' 'Medio' 'Confidencial' 'TI' 'custodio.maria' 'operador.carla' 150
+$b = Base 'ServiceAccount' 'ServicePrincipal' 'sp-conciliacion-batch' 'Medio' 'Confidencial' 'TI' 'operador.carla' 150
 $b.attributes = @{ directorySource = 'Local'; accountIdentifier = 'sp-conciliacion-batch'; accountKind = 'Batch' }; $b.initialValue = New-RandomText 20
 New-Object2 'conciliacion' 'custodio.maria' $b @($gInfra) @('Activate')
 
-$b = Base 'Secret' 'OAuthToken' 'token-open-banking-regulador' 'Alto' 'Confidencial' 'TI' 'custodio.maria' 'operador.jose' -3
+$b = Base 'Secret' 'OAuthToken' 'token-open-banking-regulador' 'Alto' 'Confidencial' 'TI' 'operador.jose' -3
 $b.description = 'Token de acceso a la API del regulador (vencido)'; $b.initialValue = 'eyDemo.' + (New-RandomText 30)
 New-Object2 'openbanking' 'custodio.maria' $b @($gPagos) @('Activate')
 
-$b = Base 'Credential' 'NetworkDevice' 'firewall-perimetral-admin' 'Crítico' 'Restringida' 'TI' 'custodio.maria' 'operador.carla' 7
+$b = Base 'Credential' 'NetworkDevice' 'firewall-perimetral-admin' 'Crítico' 'Restringida' 'TI' 'operador.carla' 7
 $b.attributes = @{ targetSystem = 'fw-perimetral-01'; accountName = 'admin-noc' }; $b.initialValue = New-RandomText 16
 New-Object2 'firewall' 'custodio.maria' $b @($gInfra) @('Activate')
 
-$b = Base 'Credential' 'TechnicalPassword' 'cuenta-tecnica-reportes' 'Bajo' 'Interna' 'TI' 'custodio.maria' 'operador.jose' 60
+$b = Base 'Credential' 'TechnicalPassword' 'cuenta-tecnica-reportes' 'Bajo' 'Interna' 'TI' 'operador.jose' 60
 $b.custodyMode = 'MetadataOnly'; $b.attributes = @{ targetSystem = 'reportes.banco-demo.local'; accountName = 'rpt_reader' }
 New-Object2 'reportes' 'custodio.maria' $b $null @('Activate')
 
-$b = Base 'Secret' 'ApplicationSecret' 'secreto-app-onboarding' 'Medio' 'Confidencial' 'TI' 'custodio.maria' 'operador.carla' 180
+$b = Base 'Secret' 'ApplicationSecret' 'secreto-app-onboarding' 'Medio' 'Confidencial' 'TI' 'operador.carla' 180
 $b.description = 'Pendiente de revisión: aún en borrador'; $b.initialValue = New-RandomText 20
 New-Object2 'onboarding' 'custodio.maria' $b $null @()
 
 # --- Canales Digitales (custodio.pedro)
-$b = Base 'Secret' 'ApiKey' 'api-key-pasarela-pagos' 'Alto' 'Confidencial' 'CAN' 'custodio.pedro' 'operador.sofia' 28
+$b = Base 'Secret' 'ApiKey' 'api-key-pasarela-pagos' 'Alto' 'Confidencial' 'CAN' 'operador.sofia' 28
 $b.initialValue = 'pk_demo_' + (New-RandomText 24)
 New-Object2 'pasarela' 'custodio.pedro' $b @($gMovil) @('Activate')
 
-$b = Base 'Certificate' 'Api' 'mtls-app-movil' 'Alto' 'Restringida' 'CAN' 'custodio.pedro' 'operador.diego' 0
+$b = Base 'Certificate' 'Api' 'mtls-app-movil' 'Alto' 'Restringida' 'CAN' 'operador.diego' 0
 $b.Remove('noExpirationJustified'); $b.certificateFileBase64 = New-Pfx 'api-movil.banco-demo.local' 40 $pfxPass; $b.certificateContainerPassword = $pfxPass
 New-Object2 'mtls' 'custodio.pedro' $b @($gMovil) @('Activate')
 
-$b = Base 'Credential' 'Database' 'bd-banca-movil-lectura' 'Medio' 'Confidencial' 'CAN' 'custodio.pedro' 'operador.diego' 200
+$b = Base 'Credential' 'Database' 'bd-banca-movil-lectura' 'Medio' 'Confidencial' 'CAN' 'operador.diego' 200
 $b.attributes = @{ targetSystem = 'pgmovil01.banco-demo.local'; accountName = 'app_readonly' }; $b.initialValue = New-RandomText 18
 New-Object2 'bdmovil' 'custodio.pedro' $b @($gMovil) @('Activate')
 
-$b = Base 'Secret' 'OAuthToken' 'client-secret-notificaciones-push' 'Bajo' 'Confidencial' 'CAN' 'custodio.pedro' 'operador.sofia' -10
+$b = Base 'Secret' 'OAuthToken' 'client-secret-notificaciones-push' 'Bajo' 'Confidencial' 'CAN' 'operador.sofia' -10
 $b.initialValue = New-RandomText 28
 New-Object2 'push' 'custodio.pedro' $b @($gMovil) @('Activate')
 
-$b = Base 'ServiceAccount' 'ManagedIdentity' 'mi-servicio-notificaciones' 'Medio' 'Confidencial' 'CAN' 'custodio.pedro' 'operador.diego' 365
+$b = Base 'ServiceAccount' 'ManagedIdentity' 'mi-servicio-notificaciones' 'Medio' 'Confidencial' 'CAN' 'operador.diego' 365
 $b.attributes = @{ directorySource = 'Local'; accountIdentifier = 'mi-notificaciones' }; $b.initialValue = New-RandomText 20
 New-Object2 'notificaciones' 'custodio.pedro' $b @($gMovil) @('Activate', 'Suspend')
 
-$b = Base 'Certificate' 'Vpn' 'vpn-sucursales' 'Alto' 'Restringida' 'CAN' 'custodio.pedro' 'operador.sofia' 0
+$b = Base 'Certificate' 'Vpn' 'vpn-sucursales' 'Alto' 'Restringida' 'CAN' 'operador.sofia' 0
 $b.Remove('noExpirationJustified'); $b.certificateFileBase64 = New-Pfx 'vpn.banco-demo.local' 60 $null
 New-Object2 'vpn' 'custodio.pedro' $b @($gMovil) @('Activate')
 
-$b = Base 'Secret' 'ApiKey' 'api-key-legado-sms' 'Bajo' 'Confidencial' 'CAN' 'custodio.pedro' 'operador.sofia' 30
+$b = Base 'Secret' 'ApiKey' 'api-key-legado-sms' 'Bajo' 'Confidencial' 'CAN' 'operador.sofia' 30
 $b.description = 'Proveedor SMS retirado'; $b.initialValue = New-RandomText 20
 New-Object2 'sms' 'custodio.pedro' $b @($gMovil) @('Activate', 'Deactivate')
 
 # --- Tesorería (operador.tomas: registra como propietario, IMP-46/IMP-58)
-$b = Base 'Credential' 'Infrastructure' 'bloomberg-terminal-mesa' 'Alto' 'Confidencial' 'TES' 'operador.tomas' 'operador.tomas' 75
+$b = Base 'Credential' 'Infrastructure' 'bloomberg-terminal-mesa' 'Alto' 'Confidencial' 'TES' 'operador.tomas' 75
 $b.attributes = @{ targetSystem = 'bbg-terminal-01'; accountName = 'mesa.dinero' }; $b.initialValue = New-RandomText 16
 New-Object2 'bloomberg' 'operador.tomas' $b $null @('Activate')
 
@@ -373,8 +373,8 @@ if ($ObjectsPerArea -gt 0) {
                 $technical = Pick @($group.Members | Where-Object { $_ -ne $custodian })
                 $prefix = switch ($type) { 'Certificate' { 'cert' } 'CryptographicKey' { 'key' } 'Secret' { 'sec' } 'Credential' { 'cred' } default { 'svc' } }
                 $b = @{ type = $type; subtype = $subtype; name = "$prefix-$system-$($env[1])-$($area.ToLowerInvariant())-$n"; criticality = $criticality;
-                    sensitivity = $sensitivity; environment = $env[0]; areaId = $areas[$area]; functionalOwnerId = $users[$custodian];
-                    technicalOwnerId = $users[$technical]; custodyMode = if ($metadataOnly) { 'MetadataOnly' } else { 'Internal' };
+                    sensitivity = $sensitivity; environment = $env[0]; areaId = $areas[$area]; ownerId = $users[$technical];
+                    custodyMode = if ($metadataOnly) { 'MetadataOnly' } else { 'Internal' };
                     description = "Objeto de demostración del sistema $system ($($env[1]))" }
                 $kind = $null
                 switch ($type) {

@@ -14,14 +14,13 @@ public sealed record ObjectAuthorizationContext(
     CustodyMode CustodyMode,
     bool HasPayload,
     Guid AreaId,
-    Guid? FunctionalOwnerId,
-    Guid? TechnicalOwnerId,
+    Guid? OwnerId,
     Guid CreatedBy,
     int CurrentVersion,
     IReadOnlyList<ObjectGroupInfo> Groups,
     IReadOnlyList<ActiveAccessInfo> ActiveAccesses)
 {
-    public bool IsOwner(Guid userId) => FunctionalOwnerId == userId || TechnicalOwnerId == userId;
+    public bool IsOwner(Guid userId) => OwnerId == userId;
 
     public bool IsCreator(Guid userId) => CreatedBy == userId;
 
@@ -48,10 +47,8 @@ public record ObjectSummary
     public DeploymentEnvironment Environment { get; init; }
     public Guid AreaId { get; init; }
     public string AreaName { get; init; } = string.Empty;
-    public Guid? FunctionalOwnerId { get; init; }
-    public string? FunctionalOwnerName { get; init; }
-    public Guid? TechnicalOwnerId { get; init; }
-    public string? TechnicalOwnerName { get; init; }
+    public Guid? OwnerId { get; init; }
+    public string? OwnerName { get; init; }
     public LifecycleState LifecycleState { get; init; }
     public ExpirationStatus ExpirationStatus { get; init; }
     public DateTime? ExpirationDate { get; init; }

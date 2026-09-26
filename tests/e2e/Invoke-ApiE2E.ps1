@@ -76,7 +76,7 @@ Check 'responsable agrega miembro' ((Call POST "/groups/$($g.Body.id)/members" @
 
 # --- Objeto confidencial (aprueba el propietario)
 $create = @{ type = 'Secret'; subtype = 'ApiKey'; name = 'api-pagos'; criticality = 'Medio'; sensitivity = 'Confidencial'; environment = 'Producción';
-    areaId = $area.id; functionalOwnerId = $cust.Id; technicalOwnerId = $cust.Id; custodyMode = 'Internal'; expirationDate = (Get-Date).ToUniversalTime().AddDays(20).ToString('o');
+    areaId = $area.id; ownerId = $cust.Id; custodyMode = 'Internal'; expirationDate = (Get-Date).ToUniversalTime().AddDays(20).ToString('o');
     initialValue = 'valor-super-secreto-123' }
 $o = Call POST '/objects' $create $cust.Token
 Check "objeto creado ($($o.Body.code))" ($o.Status -eq 201)
@@ -123,7 +123,7 @@ Check 'revelado con acceso aprobado' ($reveal.Status -eq 200 -and $reveal.Body.v
 Check 'respuesta con Cache-Control no-store' ("$($reveal.Headers['Cache-Control'])" -match 'no-store')
 
 # --- Objeto crítico (aprueba Seguridad)
-$crit = $create.Clone(); $crit.name = 'swift-token'; $crit.criticality = 'Crítico'; $crit.sensitivity = 'Restringida'; $crit.technicalOwnerId = $op.Id
+$crit = $create.Clone(); $crit.name = 'swift-token'; $crit.criticality = 'Crítico'; $crit.sensitivity = 'Restringida'; $crit.ownerId = $op.Id
 $c = Call POST '/objects' $crit $cust.Token
 $cid = $c.Body.id
 $act = Call POST "/objects/$cid/state" @{ action = 'Activate'; reason = 'Sin grupo todavía' } $cust.Token @{ 'If-Match' = $c.Body.eTag }

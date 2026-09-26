@@ -5,7 +5,7 @@
     string[] types = ["Certificate", "CryptographicKey", "Secret", "Credential", "ServiceAccount"];
 }
 <h1>Registrar objeto</h1>
-<p class="pv-muted">El objeto se crea en estado Borrador. Para activarlo necesita propietarios, expiración (o la marca «Sin vencimiento») y, si es Crítico o Restringido, un grupo con dos o más miembros activos.</p>
+<p class="pv-muted">El objeto se crea en estado Borrador. Para activarlo necesita un propietario, expiración (o la marca «Sin vencimiento») y, si es Crítico o Restringido, un grupo con dos o más miembros activos.</p>
 <form class="pv-card" asp-action="Create" method="post" enctype="multipart/form-data" autocomplete="off">
     <div asp-validation-summary="All" class="pv-err"></div>
     <div class="pv-form">
@@ -74,14 +74,9 @@
         <label>Fecha de expiración <input type="datetime-local" name="ExpirationDate" value="@f.ExpirationDate?.ToString("yyyy-MM-ddTHH:mm")" /></label>
         <label class="pv-check"><input type="checkbox" name="NoExpirationJustified" value="true" checked="@f.NoExpirationJustified" /> Sin vencimiento (justificado)</label>
         <label>
-            Propietario funcional
-            <input data-user-picker="fo" placeholder="Buscar usuario…" />
-            <select id="fo" name="FunctionalOwnerId"><option value="">— seleccione —</option></select>
-        </label>
-        <label>
-            Propietario técnico
-            <input data-user-picker="to" placeholder="Buscar usuario…" />
-            <select id="to" name="TechnicalOwnerId"><option value="">— seleccione —</option></select>
+            Propietario
+            <input data-user-picker="ow" placeholder="Buscar usuario…" />
+            <select id="ow" name="OwnerId"><option value="">— seleccione —</option></select>
         </label>
         <label class="pv-wide">Descripción <textarea name="Description" maxlength="1000">@f.Description</textarea></label>
         <label class="pv-wide">

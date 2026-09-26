@@ -13,8 +13,7 @@ public sealed record ObjectRegistration(
     Sensitivity Sensitivity,
     DeploymentEnvironment Environment,
     Guid AreaId,
-    Guid? FunctionalOwnerId,
-    Guid? TechnicalOwnerId,
+    Guid? OwnerId,
     CustodyMode CustodyMode,
     DateTime? ExpirationDate,
     bool NoExpirationJustified,
@@ -55,8 +54,7 @@ public sealed class ManagedObject
     public Sensitivity Sensitivity { get; set; }
     public DeploymentEnvironment Environment { get; set; }
     public Guid AreaId { get; set; }
-    public Guid? FunctionalOwnerId { get; set; }
-    public Guid? TechnicalOwnerId { get; set; }
+    public Guid? OwnerId { get; set; }
     public LifecycleState LifecycleState { get; set; }
     public CustodyMode CustodyMode { get; set; }
     public bool HasPayload { get; set; }
@@ -89,8 +87,7 @@ public sealed class ManagedObject
             Subtype = definition.Code,
             AreaId = data.AreaId,
             CustodyMode = data.CustodyMode,
-            FunctionalOwnerId = data.FunctionalOwnerId,
-            TechnicalOwnerId = data.TechnicalOwnerId,
+            OwnerId = data.OwnerId,
             LifecycleState = LifecycleState.Draft,
             CurrentVersion = 1,
             Thumbprint = data.Thumbprint,
@@ -142,13 +139,12 @@ public sealed class ManagedObject
         LifecycleState = target;
     }
 
-    public void AssignOwners(Guid functionalOwnerId, Guid technicalOwnerId)
+    public void AssignOwner(Guid ownerId)
     {
         EnsureNotDeactivated();
-        if (functionalOwnerId == Guid.Empty || technicalOwnerId == Guid.Empty)
-            throw new DomainException(DomainErrors.OwnersRequired, "El objeto necesita propietario funcional y técnico.");
-        FunctionalOwnerId = functionalOwnerId;
-        TechnicalOwnerId = technicalOwnerId;
+        if (ownerId == Guid.Empty)
+            throw new DomainException(DomainErrors.OwnersRequired, "El objeto necesita un propietario.");
+        OwnerId = ownerId;
     }
 
     /// <summary>Valida que el objeto pueda recibir un valor sensible (RN-004, IMP-18).</summary>
@@ -170,8 +166,8 @@ public sealed class ManagedObject
 
     private void EnsureReadyForActivation(GroupCoverage coverage)
     {
-        if (FunctionalOwnerId is null || TechnicalOwnerId is null)
-            throw new DomainException(DomainErrors.OwnersRequired, "Para activar el objeto se necesitan propietario funcional y técnico (RN-087).");
+        if (OwnerId is null)
+            throw new DomainException(DomainErrors.OwnersRequired, "Para activar el objeto se necesita un propietario (RN-087).");
         if (ExpirationDate is null && !NoExpirationJustified)
             throw new DomainException(DomainErrors.ExpirationRequired, "Para activar el objeto se necesita fecha de expiración o la marca «Sin vencimiento» (RN-063).");
         if ((IsCritical || Sensitivity == Sensitivity.Restricted) && coverage.MaxActiveMembersInAGroup < 2)

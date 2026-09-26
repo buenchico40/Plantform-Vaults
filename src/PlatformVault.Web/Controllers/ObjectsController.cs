@@ -34,8 +34,7 @@ public sealed class ObjectForm
     [Required] public string Sensitivity { get; set; } = "Confidencial";
     [Required] public string Environment { get; set; } = "Producción";
     public Guid AreaId { get; set; }
-    public Guid? FunctionalOwnerId { get; set; }
-    public Guid? TechnicalOwnerId { get; set; }
+    public Guid? OwnerId { get; set; }
     public string CustodyMode { get; set; } = "Internal";
     public DateTime? ExpirationDate { get; set; }
     public bool NoExpirationJustified { get; set; }
@@ -66,8 +65,7 @@ public sealed class ActionForm
     public string? Action { get; set; }
     public string? Criticality { get; set; }
     public string? Sensitivity { get; set; }
-    public Guid? FunctionalOwnerId { get; set; }
-    public Guid? TechnicalOwnerId { get; set; }
+    public Guid? OwnerId { get; set; }
     public List<Guid> GroupIds { get; set; } = [];
     [MaxLength(65536), DataType(DataType.Password)] public string? NewValue { get; set; }
     public IFormFile? File { get; set; }
@@ -167,8 +165,7 @@ public sealed class ObjectsController(PlatformApi api) : Controller
                 sensitivity = form.Sensitivity,
                 environment = form.Environment,
                 areaId = form.AreaId,
-                functionalOwnerId = form.FunctionalOwnerId,
-                technicalOwnerId = form.TechnicalOwnerId,
+                ownerId = form.OwnerId,
                 custodyMode = form.CustodyMode,
                 expirationDate = ToUtc(form.ExpirationDate),
                 noExpirationJustified = form.NoExpirationJustified,
@@ -224,12 +221,12 @@ public sealed class ObjectsController(PlatformApi api) : Controller
     }
 
     [HttpPost]
-    public async Task<IActionResult> Owners(Guid id, ActionForm form, CancellationToken ct)
+    public async Task<IActionResult> Owner(Guid id, ActionForm form, CancellationToken ct)
     {
         if (!Valid()) return Back(id);
         await api.PutAsync<WriteResult>($"objects/{id}/owners",
-            new { functionalOwnerId = form.FunctionalOwnerId, technicalOwnerId = form.TechnicalOwnerId, reason = form.Reason }, form.ETag, ct);
-        return Done(id, "Propietarios actualizados.");
+            new { ownerId = form.OwnerId, reason = form.Reason }, form.ETag, ct);
+        return Done(id, "Propietario actualizado.");
     }
 
     [HttpPost]

@@ -6,7 +6,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT (SELECT COUNT(*) FROM app.GroupMember WHERE UserId = @UserId) AS GroupMemberships,
-           (SELECT COUNT(*) FROM app.ManagedObject WHERE (FunctionalOwnerId = @UserId OR TechnicalOwnerId = @UserId)
+           (SELECT COUNT(*) FROM app.ManagedObject WHERE OwnerId = @UserId
                AND LifecycleState <> 'Deactivated') AS OwnedObjects;
 END
 GO

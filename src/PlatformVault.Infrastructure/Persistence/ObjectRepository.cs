@@ -25,7 +25,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
                     ? null
                     : new ObjectAuthorizationContext(row.ObjectId, row.Code, Enum<ObjectType>(row.ObjectType), Enum<Criticality>(row.Criticality),
                         Enum<Sensitivity>(row.Sensitivity), Enum<LifecycleState>(row.LifecycleState), Enum<CustodyMode>(row.CustodyMode),
-                        row.HasPayload, row.AreaId, row.FunctionalOwnerId, row.TechnicalOwnerId, row.CreatedBy, row.CurrentVersion, groups, accesses);
+                        row.HasPayload, row.AreaId, row.OwnerId, row.CreatedBy, row.CurrentVersion, groups, accesses);
             }, ct);
 
     public async Task<ManagedObject?> LoadAsync(Guid objectId, CancellationToken ct)
@@ -45,8 +45,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
             Sensitivity = Enum<Sensitivity>(row.Sensitivity),
             Environment = Enum<DeploymentEnvironment>(row.Environment),
             AreaId = row.AreaId,
-            FunctionalOwnerId = row.FunctionalOwnerId,
-            TechnicalOwnerId = row.TechnicalOwnerId,
+            OwnerId = row.OwnerId,
             LifecycleState = Enum<LifecycleState>(row.LifecycleState),
             CustodyMode = Enum<CustodyMode>(row.CustodyMode),
             HasPayload = row.HasPayload,
@@ -80,10 +79,8 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
                     Environment = Enum<DeploymentEnvironment>(row.Environment),
                     AreaId = row.AreaId,
                     AreaName = row.AreaName,
-                    FunctionalOwnerId = row.FunctionalOwnerId,
-                    FunctionalOwnerName = row.FunctionalOwnerName,
-                    TechnicalOwnerId = row.TechnicalOwnerId,
-                    TechnicalOwnerName = row.TechnicalOwnerName,
+                    OwnerId = row.OwnerId,
+                    OwnerName = row.OwnerName,
                     LifecycleState = Enum<LifecycleState>(row.LifecycleState),
                     ExpirationStatus = Enum<ExpirationStatus>(row.ExpirationStatus),
                     ExpirationDate = Utc(row.ExpirationDate),
@@ -163,8 +160,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
             Sensitivity = obj.Sensitivity.ToString(),
             Environment = obj.Environment.ToString(),
             obj.AreaId,
-            obj.FunctionalOwnerId,
-            obj.TechnicalOwnerId,
+            obj.OwnerId,
             CustodyMode = obj.CustodyMode.ToString(),
             obj.HasPayload,
             obj.ExpirationDate,
@@ -219,18 +215,17 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         return new StateChangeResult(ETag.From(row.RowVer), row.CurrentVersion, row.RevokedAccesses, row.CancelledRequests);
     }
 
-    public Task<ObjectWriteResult> SetOwnersAsync(Guid objectId, Guid functionalOwnerId, Guid technicalOwnerId, byte[] expectedRowVer,
+    public Task<ObjectWriteResult> SetOwnerAsync(Guid objectId, Guid ownerId, byte[] expectedRowVer,
         Guid actorId, DateTime nowUtc, string reason, CancellationToken ct) =>
-        WriteAsync("app.usp_ManagedObject_SetOwners", new
+        WriteAsync("app.usp_ManagedObject_SetOwner", new
         {
             ObjectId = objectId,
-            FunctionalOwnerId = functionalOwnerId,
-            TechnicalOwnerId = technicalOwnerId,
+            OwnerId = ownerId,
             ExpectedRowVer = expectedRowVer,
             ModifiedBy = actorId,
             NowUtc = nowUtc,
             Reason = reason,
-            ChangedFieldsJson = "[\"owners\"]",
+            ChangedFieldsJson = "[\"owner\"]",
         }, ct);
 
     public Task<ObjectWriteResult> SetGroupsAsync(Guid objectId, IReadOnlyCollection<Guid> groupIds, byte[] expectedRowVer, Guid actorId,
@@ -317,10 +312,8 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         Environment = Enum<DeploymentEnvironment>(row.Environment),
         AreaId = row.AreaId,
         AreaName = row.AreaName,
-        FunctionalOwnerId = row.FunctionalOwnerId,
-        FunctionalOwnerName = row.FunctionalOwnerName,
-        TechnicalOwnerId = row.TechnicalOwnerId,
-        TechnicalOwnerName = row.TechnicalOwnerName,
+        OwnerId = row.OwnerId,
+        OwnerName = row.OwnerName,
         LifecycleState = Enum<LifecycleState>(row.LifecycleState),
         ExpirationStatus = Enum<ExpirationStatus>(row.ExpirationStatus),
         ExpirationDate = Utc(row.ExpirationDate),
@@ -357,8 +350,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         public string CustodyMode { get; set; } = "";
         public bool HasPayload { get; set; }
         public Guid AreaId { get; set; }
-        public Guid? FunctionalOwnerId { get; set; }
-        public Guid? TechnicalOwnerId { get; set; }
+        public Guid? OwnerId { get; set; }
         public Guid CreatedBy { get; set; }
         public int CurrentVersion { get; set; }
     }
@@ -394,10 +386,8 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
         public string Environment { get; set; } = "";
         public Guid AreaId { get; set; }
         public string AreaName { get; set; } = "";
-        public Guid? FunctionalOwnerId { get; set; }
-        public string? FunctionalOwnerName { get; set; }
-        public Guid? TechnicalOwnerId { get; set; }
-        public string? TechnicalOwnerName { get; set; }
+        public Guid? OwnerId { get; set; }
+        public string? OwnerName { get; set; }
         public string LifecycleState { get; set; } = "";
         public string CustodyMode { get; set; } = "";
         public bool HasPayload { get; set; }

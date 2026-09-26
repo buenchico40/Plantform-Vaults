@@ -7,8 +7,8 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT o.ObjectId, o.Code, o.ObjectType, o.Subtype, o.Name, o.Description, o.Criticality, o.Sensitivity, o.Environment,
-           o.AreaId, a.Name AS AreaName, o.FunctionalOwnerId, fo.DisplayName AS FunctionalOwnerName,
-           o.TechnicalOwnerId, tec.DisplayName AS TechnicalOwnerName, o.LifecycleState, o.CustodyMode, o.HasPayload,
+           o.AreaId, a.Name AS AreaName, o.OwnerId, ow.DisplayName AS OwnerName,
+           o.LifecycleState, o.CustodyMode, o.HasPayload,
            o.ExpirationDate, o.NoExpirationJustified, o.Thumbprint, o.CurrentVersion, o.CreatedAtUtc, o.CreatedBy,
            o.ModifiedAtUtc, o.ModifiedBy, o.RowVer, o.DetailsJson,
            CASE WHEN o.ExpirationDate IS NULL THEN 'NoExpiration'
@@ -18,8 +18,7 @@ BEGIN
     FROM app.ManagedObject AS o
     JOIN app.ufn_VisibleObjects(@ViewerUserId, @HasGlobalScope) AS v ON v.ObjectId = o.ObjectId
     JOIN app.Area AS a ON a.AreaId = o.AreaId
-    LEFT JOIN [identity].[User] AS fo ON fo.UserId = o.FunctionalOwnerId
-    LEFT JOIN [identity].[User] AS tec ON tec.UserId = o.TechnicalOwnerId
+    LEFT JOIN [identity].[User] AS ow ON ow.UserId = o.OwnerId
     WHERE o.ObjectId = @ObjectId;
 
     SELECT g.GroupId, g.Code, g.Name, g.IsActive
