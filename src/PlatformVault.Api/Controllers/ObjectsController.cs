@@ -25,7 +25,8 @@ public sealed record CreateObjectRequest(
     [MaxLength(65536)] string? InitialValue,
     [MaxLength(90000)] string? KeyMaterialBase64,
     [MaxLength(90000)] string? CertificateFileBase64,
-    [MaxLength(256)] string? CertificateContainerPassword);
+    [MaxLength(256)] string? CertificateContainerPassword,
+    [MaxLength(20)] List<Guid>? GroupIds);
 
 public sealed record UpdateObjectRequest(
     [Required, MaxLength(200)] string Name,
@@ -105,7 +106,7 @@ public sealed class ObjectsController : ApiControllerBase
         };
         var result = await handler.HandleAsync(new CreateObjectCommand(request.Type, request.Subtype, request.Name, request.Description,
             request.Criticality, request.Sensitivity, request.Environment, request.AreaId, request.OwnerId,
-            request.CustodyMode, request.ExpirationDate, request.NoExpirationJustified, request.Attributes, value), ct);
+            request.CustodyMode, request.ExpirationDate, request.NoExpirationJustified, request.Attributes, value, request.GroupIds), ct);
         SetETag(result.ETag);
         return CreatedAtAction(nameof(Get), new { objectId = result.Id }, result);
     }

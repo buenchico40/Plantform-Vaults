@@ -31,7 +31,8 @@ public interface IObjectRepository
     Task<PagedResult<ObjectSummary>> SearchAsync(ObjectSearchCriteria criteria, PageRequest page, VisibilityScope scope, DateTime nowUtc, CancellationToken ct);
     Task<(bool NameExists, bool ThumbprintExists)> ExistsDuplicateAsync(ObjectType type, DeploymentEnvironment environment, Guid areaId,
         string name, string? thumbprint, Guid? excludeObjectId, CancellationToken ct);
-    Task<ObjectWriteResult> InsertAsync(ManagedObject obj, Guid actorId, DateTime nowUtc, string reason, string changedFieldsJson, CancellationToken ct);
+    Task<ObjectWriteResult> InsertAsync(ManagedObject obj, Guid actorId, DateTime nowUtc, string reason, string changedFieldsJson,
+        IReadOnlyCollection<Guid> groupIds, CancellationToken ct);
     Task<ObjectWriteResult> UpdateMetadataAsync(ManagedObject obj, byte[] expectedRowVer, Guid actorId, DateTime nowUtc, string reason,
         string changedFieldsJson, bool resolveOpenAlerts, CancellationToken ct);
     Task<StateChangeResult> ChangeStateAsync(Guid objectId, LifecycleState newState, byte[] expectedRowVer, Guid actorId, DateTime nowUtc,

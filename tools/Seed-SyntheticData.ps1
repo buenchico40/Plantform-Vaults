@@ -158,12 +158,16 @@ function New-Pfx([string] $cn, [double] $days, [string] $password) {
 }
 
 $objects = @{}
+$groupsByUser = @{}
 function New-Object2([string] $key, [string] $creator, [hashtable] $body, $groups, [string[]] $states) {
+    # IMP-63: el objeto se asigna en el alta a grupos del creador; sin grupo indicado se usa el primero de los suyos.
+    if (-not $groupsByUser.ContainsKey($creator)) {
+        $groupsByUser[$creator] = @((Api GET '/groups?status=Activo&pageSize=200' $null $sessions[$creator]).items | ForEach-Object { $_.id })
+    }
+    $ids = if ($groups) { @($groups) } else { @($groupsByUser[$creator] | Select-Object -First 1) }
+    if ($ids.Count -gt 0) { $body.groupIds = $ids }
     $o = Api POST '/objects' $body $sessions[$creator]
     $etag = $o.eTag
-    if ($groups) {
-        $etag = (Api PUT "/objects/$($o.id)/groups" @{ groupIds = @($groups); reason = 'Asignación inicial de datos de demostración' } $sessions[$creator] $etag).eTag
-    }
     foreach ($s in $states) {
         $etag = (Api POST "/objects/$($o.id)/state" @{ action = $s; reason = "Datos de demostración: $s" } $sessions[$creator] $etag).eTag
     }

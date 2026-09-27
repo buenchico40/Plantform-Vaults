@@ -147,7 +147,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
     }
 
     public async Task<ObjectWriteResult> InsertAsync(ManagedObject obj, Guid actorId, DateTime nowUtc, string reason, string changedFieldsJson,
-        CancellationToken ct)
+        IReadOnlyCollection<Guid> groupIds, CancellationToken ct)
     {
         var row = await sp.QuerySingleOrDefaultAsync<WriteRow>("app.usp_ManagedObject_Insert", new
         {
@@ -171,6 +171,7 @@ public sealed class ObjectRepository(StoredProcedures sp) : IObjectRepository
             NowUtc = nowUtc,
             Reason = reason,
             ChangedFieldsJson = changedFieldsJson,
+            GroupIds = StoredProcedures.GuidList(groupIds),
         }, ct) ?? throw new InvalidOperationException("El alta no devolvió resultado.");
         obj.Code = row.Code ?? string.Empty;
         obj.RowVer = row.RowVer;

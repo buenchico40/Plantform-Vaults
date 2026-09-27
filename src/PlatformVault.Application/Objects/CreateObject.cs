@@ -23,7 +23,8 @@ public sealed record CreateObjectCommand(
     DateTime? ExpirationDate,
     bool NoExpirationJustified,
     IReadOnlyDictionary<string, string>? Attributes,
-    SecretInput? Value);
+    SecretInput? Value,
+    IReadOnlyList<Guid>? GroupIds = null);
 
 public sealed record ObjectCreated(Guid Id, string Code, string ETag);
 
@@ -36,6 +37,7 @@ public sealed class CreateObjectHandler(
     IEnvelopeEncryption encryption,
     ICertificateInspector certificates,
     OwnerValidator owners,
+    IGroupRepository groups,
     IUnitOfWork unitOfWork,
     AuditLogger audit,
     Notifier notifier) : ICommandHandler<CreateObjectCommand, ObjectCreated>
@@ -49,6 +51,7 @@ public sealed class CreateObjectHandler(
             throw new ForbiddenFailure("Solo puede registrar objetos en su área.");
 
         await owners.ValidateAsync(command.OwnerId, ct);
+        var groupIds = await ValidateGroupsAsync(command.GroupIds, ct);
 
         var definition = ObjectCatalog.Get(command.Type, command.Subtype);
         var prepared = PayloadPreparation.Prepare(command.Value, command.Type, definition.PayloadKind, certificates);
@@ -85,7 +88,7 @@ public sealed class CreateObjectHandler(
 
             var now = clock.UtcNow;
             await using var tx = await unitOfWork.BeginAsync(ct);
-            var result = await objects.InsertAsync(obj, user.UserId, now, "Alta del objeto", "[\"created\"]", ct);
+            var result = await objects.InsertAsync(obj, user.UserId, now, "Alta del objeto", "[\"created\"]", groupIds, ct);
             if (prepared.Bytes is not null)
             {
                 var encrypted = encryption.Encrypt(prepared.Bytes, obj.ObjectId, result.CurrentVersion, 0, obj.EnsureCanStorePayload());
@@ -101,6 +104,7 @@ public sealed class CreateObjectHandler(
                 criticality = obj.Criticality.ToString(),
                 sensitivity = obj.Sensitivity.ToString(),
                 hasValue = obj.HasPayload,
+                groups = groupIds,
             }, ct);
             await notifier.NotifySecurityAsync(obj.IsCritical, result.Code ?? obj.ObjectId.ToString(), "alta", ct);
             await tx.CommitAsync(ct);
@@ -112,6 +116,24 @@ public sealed class CreateObjectHandler(
             prepared.Clear();
             command.Value?.Clear();
         }
+    }
+
+    /// <summary>
+    /// IMP-63: el objeto se asigna en el alta a grupos activos de los que el usuario es miembro. Si pertenece a alguno,
+    /// debe elegir al menos uno; si no pertenece a ninguno, el objeto queda visible solo para quien lo registra y su propietario.
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ValidateGroupsAsync(IReadOnlyList<Guid>? requested, CancellationToken ct)
+    {
+        var ids = (requested ?? []).Distinct().ToList();
+        if (ids.Count > SetObjectGroupsHandler.MaxGroups)
+            throw new ValidationFailure($"Un objeto admite como máximo {SetObjectGroupsHandler.MaxGroups} grupos.");
+        var mine = (await groups.SearchAsync(null, true, new PageRequest(1, PageRequest.MaxPageSize), user.UserId, hasGlobalScope: false, ct))
+            .Items.Select(g => g.Id).ToHashSet();
+        if (ids.Count == 0 && mine.Count > 0)
+            throw new ValidationFailure("Seleccione al menos uno de sus grupos para que puedan ver el objeto.");
+        if (ids.Any(id => !mine.Contains(id)))
+            throw new ForbiddenFailure("Solo puede asignar el objeto a grupos activos de los que es miembro.");
+        return ids;
     }
 }
 

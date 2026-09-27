@@ -78,6 +78,21 @@
             <input data-user-picker="ow" placeholder="Buscar usuario…" />
             <select id="ow" name="OwnerId"><option value="">— seleccione —</option></select>
         </label>
+        <fieldset class="pv-wide">
+            <legend>Grupos que podrán ver el objeto</legend>
+            @if (Model.MyGroups.Count == 0)
+            {
+                <span class="pv-muted">No pertenece a ningún grupo activo: solo usted y el propietario verán el objeto hasta que se asigne a un grupo.</span>
+            }
+            else
+            {
+                @foreach (var g in Model.MyGroups)
+                {
+                    <label class="pv-check"><input type="checkbox" name="GroupIds" value="@g.Id" checked="@f.GroupIds.Contains(g.Id)" /> @g.Code · @g.Name (@g.MemberCount miembros)</label>
+                }
+                <span class="pv-muted">Elija al menos uno. Solo se muestran los grupos activos de los que es miembro.</span>
+            }
+        </fieldset>
         <label class="pv-wide">Descripción <textarea name="Description" maxlength="1000">@f.Description</textarea></label>
         <label class="pv-wide">
             Atributos del tipo (uno por línea, clave=valor)

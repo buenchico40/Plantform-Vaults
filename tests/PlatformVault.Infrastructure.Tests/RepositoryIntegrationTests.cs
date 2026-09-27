@@ -94,7 +94,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var owner = await CreateUserAsync(sp, "own");
         var objects = new ObjectRepository(sp);
         var obj = NewSecret(owner, "conc-" + Guid.NewGuid().ToString("N")[..8]);
-        var created = await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        var created = await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None);
         Assert.StartsWith("OBJ-", created.Code, StringComparison.Ordinal);
 
         var loaded = (await objects.LoadAsync(obj.ObjectId, CancellationToken.None))!;
@@ -120,7 +120,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var objects = new ObjectRepository(sp);
         var name = "vis-" + Guid.NewGuid().ToString("N")[..8];
         var obj = NewSecret(owner, name);
-        await objects.InsertAsync(obj, creator, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        await objects.InsertAsync(obj, creator, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None);
 
         var criteria = new ObjectSearchCriteria { Text = name };
         var page = new PageRequest();
@@ -132,6 +132,30 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task Groups_chosen_at_creation_grant_visibility_in_version_1_IMP63()
+    {
+        var (session, sp) = db.Open();
+        await using var _ = session;
+        var creator = await CreateUserAsync(sp, "cre");
+        var member = await CreateUserAsync(sp, "mem");
+        var stranger = await CreateUserAsync(sp, "str");
+        var groups = new GroupRepository(sp);
+        var groupId = Guid.NewGuid();
+        await groups.InsertAsync(groupId, "grp-" + Guid.NewGuid().ToString("N")[..8], null, null, creator, creator, DateTime.UtcNow, CancellationToken.None);
+        await groups.UpsertMemberAsync(groupId, member, false, creator, DateTime.UtcNow, CancellationToken.None);
+
+        var objects = new ObjectRepository(sp);
+        var obj = NewSecret(creator, "grp-" + Guid.NewGuid().ToString("N")[..8]);
+        var created = await objects.InsertAsync(obj, creator, DateTime.UtcNow, "Alta", "[]", [groupId], CancellationToken.None);
+
+        Assert.Equal(1, created.CurrentVersion);
+        var detail = await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(member, false), DateTime.UtcNow, CancellationToken.None);
+        Assert.NotNull(detail);
+        Assert.Equal([groupId], detail.Groups.Select(g => g.Id));
+        Assert.Null(await objects.GetDetailAsync(obj.ObjectId, new VisibilityScope(stranger, false), DateTime.UtcNow, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Duplicate_names_are_detected_RN005()
     {
         var (session, sp) = db.Open();
@@ -139,10 +163,10 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var owner = await CreateUserAsync(sp, "own");
         var objects = new ObjectRepository(sp);
         var name = "dup-" + Guid.NewGuid().ToString("N")[..8];
-        await objects.InsertAsync(NewSecret(owner, name), owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        await objects.InsertAsync(NewSecret(owner, name), owner, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None);
         var (exists, _) = await objects.ExistsDuplicateAsync(ObjectType.Secret, DeploymentEnvironment.Development, DefaultArea, name, null, null, CancellationToken.None);
         Assert.True(exists);
-        await Assert.ThrowsAsync<ConflictFailure>(() => objects.InsertAsync(NewSecret(owner, name), owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictFailure>(() => objects.InsertAsync(NewSecret(owner, name), owner, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None));
     }
 
     [Fact]
@@ -154,7 +178,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var objects = new ObjectRepository(sp);
         var obj = NewSecret(owner, "vault-" + Guid.NewGuid().ToString("N")[..8]);
         obj.HasPayload = true;
-        await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None);
 
         using var kek = TestCertificates.Rsa();
         using var crypto = new EnvelopeEncryption(kek, []);
@@ -174,7 +198,7 @@ public sealed class RepositoryIntegrationTests(DatabaseFixture db)
         var owner = await CreateUserAsync(sp, "own");
         var objects = new ObjectRepository(sp);
         var obj = NewSecret(owner, "cert-" + Guid.NewGuid().ToString("N")[..8]);
-        await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", CancellationToken.None);
+        await objects.InsertAsync(obj, owner, DateTime.UtcNow, "Alta", "[]", [], CancellationToken.None);
         Assert.Null(await objects.GetPublicCertificateAsync(obj.ObjectId, CancellationToken.None));
         await objects.InsertPublicCertificateAsync(obj.ObjectId, 1, [1, 2, 3], CancellationToken.None);
         await objects.InsertPublicCertificateAsync(obj.ObjectId, 2, [4, 5, 6], CancellationToken.None);

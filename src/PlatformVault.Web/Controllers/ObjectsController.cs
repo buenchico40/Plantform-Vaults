@@ -45,6 +45,9 @@ public sealed class ObjectForm
     [MaxLength(65536), DataType(DataType.Password)] public string? InitialValue { get; set; }
     public IFormFile? File { get; set; }
     [MaxLength(256), DataType(DataType.Password)] public string? ContainerPassword { get; set; }
+
+    /// <summary>IMP-63: grupos del usuario a los que se asigna el objeto en el alta.</summary>
+    public List<Guid> GroupIds { get; set; } = [];
 }
 
 public sealed class EditForm
@@ -100,6 +103,7 @@ public sealed class ObjectFormModel
     public ObjectForm Form { get; set; } = new();
     public List<AreaView> Areas { get; set; } = [];
     public List<SubtypeView> Subtypes { get; set; } = [];
+    public List<GroupSummary> MyGroups { get; set; } = [];
 }
 
 public sealed class ObjectsController(PlatformApi api) : Controller
@@ -144,7 +148,14 @@ public sealed class ObjectsController(PlatformApi api) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Create(CancellationToken ct) => View(await FormModelAsync(new ObjectForm(), ct));
+    public async Task<IActionResult> Create(CancellationToken ct)
+    {
+        var model = await FormModelAsync(new ObjectForm(), ct);
+        // Con un solo grupo, se propone por defecto (IMP-63).
+        if (model.MyGroups.Count == 1)
+            model.Form.GroupIds = [model.MyGroups[0].Id];
+        return View(model);
+    }
 
     [HttpPost]
     [RequestSizeLimit(200_000)]
@@ -174,11 +185,12 @@ public sealed class ObjectsController(PlatformApi api) : Controller
                 keyMaterialBase64 = form.Type == "CryptographicKey" ? file : null,
                 certificateFileBase64 = form.Type == "Certificate" ? file : null,
                 certificateContainerPassword = NullIfEmpty(form.ContainerPassword),
+                groupIds = form.GroupIds,
             }, ct);
             TempData["Info"] = $"Objeto {created.Code} registrado en estado Borrador.";
             return RedirectToAction(nameof(Details), new { id = created.Id });
         }
-        catch (ApiException ex) when ((int)ex.Status is 400 or 409 or 422)
+        catch (ApiException ex) when ((int)ex.Status is 400 or 403 or 409 or 422)
         {
             ModelState.AddModelError(string.Empty, Infrastructure.ApiExceptionFilter.Describe(ex));
             form.InitialValue = null;
@@ -306,6 +318,7 @@ public sealed class ObjectsController(PlatformApi api) : Controller
         Form = form,
         Areas = await api.GetAsync<List<AreaView>>("areas", ct),
         Subtypes = await api.GetAsync<List<SubtypeView>>("catalog/subtypes", ct),
+        MyGroups = (await api.GetAsync<Paged<GroupSummary>>("groups?status=Activo&pageSize=200", ct)).Items,
     };
 
     internal static Dictionary<string, string>? ParseAttributes(string? text)

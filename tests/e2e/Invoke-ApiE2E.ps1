@@ -75,7 +75,7 @@ Check 'Seguridad no puede ser miembro (422)' ($secMember.Status -eq 422)
 Check 'responsable agrega miembro' ((Call POST "/groups/$($g.Body.id)/members" @{ userId = $op.Id } $cust.Token).Status -eq 204)
 
 # --- Objeto confidencial (aprueba el propietario)
-$create = @{ type = 'Secret'; subtype = 'ApiKey'; name = 'api-pagos'; criticality = 'Medio'; sensitivity = 'Confidencial'; environment = 'Producción';
+$create = @{ type = 'Secret'; subtype = 'ApiKey'; name = 'api-pagos'; criticality = 'Medio'; sensitivity = 'Confidencial'; environment = 'Producción'; groupIds = @($g.Body.id);
     areaId = $area.id; ownerId = $cust.Id; custodyMode = 'Internal'; expirationDate = (Get-Date).ToUniversalTime().AddDays(20).ToString('o');
     initialValue = 'valor-super-secreto-123' }
 $o = Call POST '/objects' $create $cust.Token

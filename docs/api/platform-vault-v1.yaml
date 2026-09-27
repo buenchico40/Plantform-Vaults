@@ -2936,6 +2936,11 @@ components:
             certificateContainerPassword: { type: string, format: password, writeOnly: true }
             initialValue: { type: string, format: password, writeOnly: true, description: "Sensitive Payload en modo Interno (RN-022, ≤64KB)" }
             keyMaterialBase64: { type: string, format: byte, writeOnly: true }
+            groupIds:
+              type: array
+              maxItems: 20
+              items: { type: string, format: uuid }
+              description: "IMP-63: grupos activos del usuario a los que se asigna el objeto en el alta. Obligatorio (al menos uno) si el usuario pertenece a algún grupo; solo se aceptan grupos de los que es miembro (403 en otro caso)."
 
     UpdateManagedObjectRequest:
       type: object
